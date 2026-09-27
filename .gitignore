@@ -6,6 +6,9 @@
 /target
 /todos
 
+# our own analysis and planning, deliberately not tracked
+/docs-local/
+
 # website
 www/static/og.png
 
