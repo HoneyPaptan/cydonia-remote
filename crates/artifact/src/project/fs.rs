@@ -373,8 +373,7 @@ impl super::Project for Project {
 
     fn save_session(&self, record: &Record) -> Result<()> {
         let body = serde_json::to_string_pretty(record)?;
-        std::fs::write(self.session_file(&record.id), body)?;
-        Ok(())
+        crate::atomic::write(&self.session_file(&record.id), body.as_bytes())
     }
 
     fn remove_session(&self, id: &str) -> Result<()> {
