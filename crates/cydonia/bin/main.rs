@@ -3,6 +3,8 @@
 // No console window beside the app. Debug builds keep one for their output.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod headless;
+
 use anyhow::Result;
 use bezel::{gpui::App, gpui_platform};
 use gui::{
@@ -29,6 +31,9 @@ fn main() -> Result<()> {
     // After the restore and before the window: it reads whether `state.toml`
     // is there, which is what tells a first run from every other one.
     welcome::seed(&mut state);
+    if std::env::args().any(|arg| arg == "--headless") {
+        return headless::run(settings, state);
+    }
     let app = gpui_platform::application();
     // The Dock icon and a second launch both land here. ⌘W leaves the app
     // running with no window, as it does in every other mac app, so this is
