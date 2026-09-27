@@ -482,15 +482,6 @@ pub struct Cydonia {
     /// What [`Cydonia::desktop_only`] was last asked about, while its notice
     /// is up.
     pub(crate) desktop_only: Option<&'static str>,
-    /// The spaces whose members are folded away, by space id.
-    ///
-    /// Collapsed rather than expanded, so a space is open until someone folds
-    /// it: an entry is listed under the space holding it and nowhere else, and
-    /// a fold remembered across launches would start the window with entries
-    /// hidden behind a row nobody chose to close.
-    ///
-    /// Runtime only, for the same reason.
-    pub(crate) collapsed_spaces: std::collections::HashSet<String>,
     /// Where a pane dropped on a pane's edge would land: the pane under the
     /// pointer, and which of its edges. Written by whichever pane the pointer
     /// is inside and read by the one that draws the mark, the way a card's
@@ -536,6 +527,8 @@ pub struct Cydonia {
     /// What the name field is attached to, and the field itself.
     pub(crate) renaming: Option<Renaming>,
     pub(crate) name_field: Entity<TextField>,
+    /// The sidebar's search across projects — see [`crate::view::search`].
+    pub(crate) search: crate::view::search::Search,
     meter: Entity<Stats>,
     meter_at: Floating,
     /// The rail's scroll. A step taken from the keyboard has to bring its
@@ -623,8 +616,11 @@ impl Cydonia {
         // repaints the field alone, and the lanes would keep every card until
         // something else asked for a frame.
         let find = board::find_field(cx);
-        cx.subscribe(&find, |_, _, _: &FieldEvent, cx| cx.notify())
-            .detach();
+        cx.subscribe(&find, |this, field, event: &FieldEvent, cx| match event {
+            FieldEvent::Changed(_) => this.find_changed(&field, cx),
+            FieldEvent::Moved => {}
+        })
+        .detach();
         (composer, board::field(cx), table::field(cx), find)
     }
 
@@ -943,6 +939,7 @@ impl Cydonia {
         // ended; the composer's placeholder, commands and busy state are all
         // read back from it rather than pushed by whoever caused the change.
         cx.observe_in(&workspace, window, |this, _, window, cx| {
+            this.refresh_applied_search(cx);
             let previous = this.leaf().composer.read(cx).session();
             this.sync_composer(cx);
             let current = this.leaf().composer.read(cx).session();
@@ -1011,7 +1008,6 @@ impl Cydonia {
             settings_window: None,
             #[cfg(not(feature = "desktop"))]
             settings_sheet: None,
-            collapsed_spaces: Default::default(),
             pane_landing: None,
             fronts: Default::default(),
             tab_history: Vec::new(),
@@ -1029,6 +1025,7 @@ impl Cydonia {
             menu_pressed: false,
             renaming: None,
             name_field,
+            search: crate::view::search::Search::new(cx),
             rail: UniformListScrollHandle::new(),
             focus: cx.focus_handle(),
         };
@@ -1313,6 +1310,7 @@ impl Cydonia {
         self.workspace
             .update(cx, |workspace, cx| workspace.select_session(id, cx));
         self.sync_composer(cx);
+        self.reveal_applied_match(cx);
         if self
             .workspace
             .read(cx)
@@ -1640,6 +1638,7 @@ impl Render for Cydonia {
             // Over every column and every floating control: nothing behind it
             // is answerable while it is asking.
             .children(self.confirm_delete(cx))
+            .children(self.search_palette(cx))
             .children(self.settings_sheet(cx))
             .children(self.desktop_only_notice(cx))
             .children(self.new_board_dialog(cx));

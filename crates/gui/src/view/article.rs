@@ -224,6 +224,7 @@ impl Cydonia {
             (_, _, Some(editor)) => window.focus(&editor.focus_handle(cx), cx),
             _ => {}
         }
+        self.reveal_applied_match(cx);
         cx.notify();
     }
 
@@ -399,6 +400,13 @@ impl Cydonia {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
+        let editor = self
+            .workspace
+            .read(cx)
+            .article_in(project, at)?
+            .editor
+            .clone()?;
+        self.paint_article_find(&editor, on, cx);
         let article = self.workspace.read(cx).article_in(project, at)?;
         let field = article.field.clone()?;
         let editor = article.editor.clone()?;
@@ -508,7 +516,8 @@ impl Cydonia {
                             "article-bar",
                             &article.scroll,
                             bezel::gpui::Axis::Vertical,
-                        )),
+                        ))
+                        .children(self.search_pill(on, cx)),
                 )
                 // Last, and floated over the document from where the
                 // selection ends — the bar is chrome the page runs under.
@@ -649,20 +658,15 @@ impl Cydonia {
     ) -> impl IntoElement + use<> {
         let theme = Theme::of(cx).clone();
         let workspace = self.workspace.read(cx);
-        let selected = !self.arranged(cx)
-            && self.showing(cx) == Some(Pane::Article)
-            && workspace.active == Some(project)
-            && workspace
-                .projects
-                .get(project)
-                .is_some_and(|open| open.article == Some(ix));
         let entry = Row::Article { project, ix };
+        let light = self.light_of(entry, cx);
+        let selected = light.selected();
         let article = workspace
             .projects
             .get(project)
             .and_then(|open| open.articles.get(ix));
         let archived = article.is_some_and(|article| article.archived);
-        let tint = sidebar::tint(selected, archived, &theme);
+        let tint = light.tint(archived, &theme);
         let id = SharedString::from(format!("article-{project}-{ix}"));
 
         sidebar::row(

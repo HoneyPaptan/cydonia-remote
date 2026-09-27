@@ -11,6 +11,7 @@ pub mod confirm;
 pub mod create;
 pub mod desktop;
 pub mod detail;
+pub mod find;
 pub mod header;
 #[cfg(feature = "desktop")]
 pub mod hotkey;
@@ -19,6 +20,7 @@ pub mod keymap;
 pub mod leaf;
 pub mod menubar;
 pub mod root;
+pub mod search;
 pub mod section;
 pub mod settings;
 pub mod sidebar;

@@ -74,11 +74,12 @@ struct Working {
 /// screen.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Row {
-    Project(usize),
+    /// The heading over a section of the list.
+    Heading(Heading),
+    /// A project or a space: a heading its entries fold under.
+    Group(Group),
     /// The line the archived entries are folded under.
     Archive(usize),
-    /// The line the spaces are listed under. Drawn only while there is one.
-    Spaces,
     Session {
         project: usize,
         id: u64,
@@ -87,7 +88,6 @@ pub(crate) enum Row {
         project: usize,
         ix: usize,
     },
-    Space(usize),
     Article {
         project: usize,
         ix: usize,
@@ -98,12 +98,70 @@ pub(crate) enum Row {
     },
 }
 
+/// The two sections of the list.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Heading {
+    Projects,
+    /// Drawn only while there is a space.
+    Spaces,
+}
+
+impl Heading {
+    /// What the heading is called, on screen and in `state.toml`.
+    fn label(self) -> &'static str {
+        match self {
+            Self::Projects => "Projects",
+            Self::Spaces => "Spaces",
+        }
+    }
+
+    fn key(self) -> &'static str {
+        match self {
+            Self::Projects => "projects",
+            Self::Spaces => "spaces",
+        }
+    }
+}
+
+/// What entries are listed under: a project holds its own, a space the ones it
+/// arranges. One heading, one fold and one drag for both — see
+/// [`Cydonia::group_head`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Group {
+    Project(usize),
+    Space(usize),
+}
+
+/// How a row's entry stands to what the window is showing.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Light {
+    /// In the focused pane: the one row that says where you are.
+    Focused,
+    /// In another pane of the open space.
+    Shown,
+    Off,
+}
+
+impl Light {
+    /// Whether the row takes the selected wash.
+    pub(crate) fn selected(self) -> bool {
+        self == Self::Focused
+    }
+
+    /// The ink an entry's name is written in.
+    pub(crate) fn tint(self, archived: bool, theme: &Theme) -> Hsla {
+        tint(self != Self::Off, archived, theme)
+    }
+}
+
 /// Which of a project's four an entry row stands for, and `None` for the two
 /// rows that are not entries.
 fn showing_of(row: Row) -> Option<Showing> {
     Some(match row {
         // A space arranges entries; it is not one a pane can be put on.
-        Row::Project(_) | Row::Archive(_) | Row::Space(_) | Row::Spaces => return None,
+        Row::Group(_) | Row::Archive(_) | Row::Heading(_) => {
+            return None;
+        }
         Row::Session { id, .. } => Showing::Session(id),
         Row::Board { ix, .. } => Showing::Board(ix),
         Row::Article { ix, .. } => Showing::Article(ix),
@@ -114,12 +172,12 @@ fn showing_of(row: Row) -> Option<Showing> {
 /// The project an entry row belongs to.
 fn project_of(row: Row) -> Option<usize> {
     match row {
-        Row::Project(ix) | Row::Archive(ix) => Some(ix),
+        Row::Group(Group::Project(ix)) | Row::Archive(ix) => Some(ix),
         Row::Session { project, .. }
         | Row::Board { project, .. }
         | Row::Article { project, .. }
         | Row::Table { project, .. } => Some(project),
-        Row::Space(_) | Row::Spaces => None,
+        Row::Group(Group::Space(_)) | Row::Heading(_) => None,
     }
 }
 
@@ -131,9 +189,12 @@ fn shown(row: Row, features: &Features) -> bool {
         Row::Session { .. } => features.sessions,
         Row::Board { .. } => features.boards,
         Row::Table { .. } => features.tables,
-        Row::Project(_) | Row::Archive(_) | Row::Article { .. } | Row::Space(_) | Row::Spaces => {
-            true
-        }
+        Row::Group(Group::Project(_))
+        | Row::Archive(_)
+        | Row::Article { .. }
+        | Row::Group(Group::Space(_))
+        | Row::Heading(Heading::Projects)
+        | Row::Heading(Heading::Spaces) => true,
     }
 }
 
@@ -169,16 +230,19 @@ pub(crate) fn tint(selected: bool, archived: bool, theme: &Theme) -> Hsla {
     }
 }
 
-/// A project on its way to another place in the list. The index is safe to
-/// carry: nothing reorders the list while a drag is in flight.
+/// A project or a space on its way to another place in its list. The index is
+/// safe to carry: nothing reorders the list while a drag is in flight. Its own
+/// drag rather than [`EntryDrag`]: a group is not something a pane can be put
+/// on. It lands only among its own kind.
 #[derive(Clone)]
-pub(crate) struct ProjectDrag(usize);
+pub(crate) struct GroupDrag(Group);
 
-/// A space on its way to another place in the list, carried the way a project
-/// is. Its own drag rather than [`EntryDrag`]: a space is not something a
-/// pane can be put on, and the two lists never mix.
-#[derive(Clone)]
-pub(crate) struct SpaceDrag(usize);
+fn same_kind(a: Group, b: Group) -> bool {
+    matches!(
+        (a, b),
+        (Group::Project(_), Group::Project(_)) | (Group::Space(_), Group::Space(_))
+    )
+}
 
 /// What rides under the cursor while an entry is being carried. Shared with
 /// the panes, so a tab dragged out of a strip looks like the same gesture the
@@ -214,9 +278,10 @@ impl Render for Carried {
 /// An entry's own name in the element tree: two rows must never share one.
 fn key_of(entry: Row) -> String {
     match entry {
-        Row::Project(ix) => format!("project-{ix}"),
-        Row::Space(ix) => format!("space-{ix}"),
-        Row::Spaces => "spaces".to_owned(),
+        Row::Group(Group::Project(ix)) => format!("project-{ix}"),
+        Row::Group(Group::Space(ix)) => format!("space-{ix}"),
+        Row::Heading(Heading::Projects) => "projects".to_owned(),
+        Row::Heading(Heading::Spaces) => "spaces".to_owned(),
         Row::Archive(ix) => format!("archive-{ix}"),
         Row::Session { project, id } => format!("session-{project}-{id}"),
         Row::Board { project, ix } => format!("board-{project}-{ix}"),
@@ -263,6 +328,20 @@ pub(crate) fn row(
     indent: u8,
     theme: &Theme,
 ) -> Stateful<Div> {
+    row_frame(id, group, indent)
+        .when(selected, |el| el.bg(theme.element_active))
+        // Only off the open row: the hover wash is the weaker rung, and
+        // painting it over the selection would dim what the pointer is on.
+        .when(!selected, |el| el.hover(|el| el.bg(theme.element_hover)))
+}
+
+/// A row's place in the column with none of its washes: what a line that is
+/// never selected and takes no hover wash — a section's heading — stands in.
+pub(crate) fn row_frame(
+    id: impl Into<gpui::ElementId>,
+    group: &'static str,
+    indent: u8,
+) -> Stateful<Div> {
     div()
         .id(id)
         .group(group)
@@ -283,10 +362,6 @@ pub(crate) fn row(
         .gap(px(ROW_GAP))
         .rounded(px(Theme::control_radius()))
         .cursor_pointer()
-        .when(selected, |el| el.bg(theme.element_active))
-        // Only off the open row: the hover wash is the weaker rung, and
-        // painting it over the selection would dim what the pointer is on.
-        .when(!selected, |el| el.hover(|el| el.bg(theme.element_hover)))
 }
 
 /// One entry of a project, with what the list can be ordered by.
@@ -303,17 +378,6 @@ struct Ranked {
 /// under the name being typed.
 fn row_label(name: String, tint: Hsla) -> AnyElement {
     labelled(name, tint, TextStyle::Body)
-}
-
-/// The same, in the type a heading is written in — see
-/// [`Cydonia::space_row`].
-///
-/// One shape behind both: `flex_1` is what fills the row and so what holds a
-/// trailing button out at the edge, and `truncate` is what ellipsizes rather
-/// than clipping a word in half. A label built without them looks right until
-/// the row has something after it or the name is long.
-fn row_heading(name: String, tint: Hsla) -> AnyElement {
-    labelled(name, tint, TextStyle::Callout)
 }
 
 fn labelled(name: String, tint: Hsla, style: TextStyle) -> AnyElement {
@@ -379,7 +443,6 @@ impl Cydonia {
         // tooltips below are built inside closures that outlive this borrow.
         let shortcuts = &self.workspace.read(cx).settings.shortcuts;
         let settings_chord = keymap::label(Command::OpenSettings, shortcuts);
-        let open_chord = keymap::label(Command::OpenProject, shortcuts);
         let rows = self.rows(cx);
         let count = rows.len();
         div()
@@ -403,6 +466,7 @@ impl Cydonia {
                     .children(self.app_menu(window, cx))
                     .child(self.fold_toggle(cx)),
             )
+            .child(self.search_row(cx))
             .child(
                 div()
                     .relative()
@@ -450,29 +514,7 @@ impl Cydonia {
                     .flex_row()
                     .items_center()
                     .justify_between()
-                    .children(self.settings_button(settings_chord, cx))
-                    .child(
-                        div().flex().flex_row().items_center().gap(px(2.)).child(
-                            theme
-                                .ghost("open-project")
-                                .px(px(8.))
-                                .py(px(6.))
-                                .tooltip(move |window, cx| match open_chord.clone() {
-                                    Some(chord) => {
-                                        Tooltip::with_keystroke("Open project", chord, window, cx)
-                                    }
-                                    None => Tooltip::text("Open project", window, cx),
-                                })
-                                .child(
-                                    icons::icon(icons::files::FolderPlus)
-                                        .size(px(13.))
-                                        .text_color(theme.text_faint),
-                                )
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.open_project_action(&OpenProject, window, cx);
-                                })),
-                        ),
-                    ),
+                    .children(self.settings_button(settings_chord, cx)),
             )
     }
 
@@ -605,14 +647,14 @@ impl Cydonia {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let rows = self.rows(cx);
-        let head = |row: &Row| matches!(row, Row::Project(_));
+        let head = |row: &Row| matches!(row, Row::Group(_));
         let Some(at) = rows
             .get(..=first)
             .and_then(|above| above.iter().rposition(head))
         else {
             return Empty.into_any_element();
         };
-        let Row::Project(ix) = rows[at] else {
+        let Row::Group(group) = rows[at] else {
             return Empty.into_any_element();
         };
         // The next heading pushes this one out rather than sliding under it,
@@ -644,42 +686,88 @@ impl Cydonia {
                     .w_full()
                     .h(px(ROW_HEIGHT))
                     .overflow_hidden()
-                    .child(self.project_head(ix, true, window, cx)),
+                    .child(self.group_head(group, true, window, cx)),
             )
             .into_any_element()
     }
 
-    /// One project's heading: it folds, and its `+` opens what can be made in
-    /// the project.
+    /// A project's or a space's heading: a press folds it. A space opens from
+    /// the entries under it, and its heading is never lit — the lit row is the
+    /// entry in the focused pane, see [`Self::light_of`].
     ///
     /// `pinned` is the copy [`Cydonia::pinned_head`] holds at the top of the
     /// list. It gives up the pill for the column's full width, and takes the
     /// glass the floating cluster below it is cut from — a heading with rows
     /// running under it has to be read against whatever is passing.
-    fn project_head(
+    fn group_head(
         &self,
-        ix: usize,
+        group: Group,
         pinned: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let theme = Theme::of(cx).clone();
-        let (name, expanded) = match self.workspace.read(cx).projects.get(ix) {
-            Some(project) => (project.name(), project.expanded),
-            None => return Empty.into_any_element(),
-        };
+        let workspace = self.workspace.read(cx);
+        let (name, folded, marks, space_id): (String, bool, (Icon, Icon), Option<String>) =
+            match group {
+                Group::Project(ix) => match workspace.projects.get(ix) {
+                    Some(project) => (
+                        project.name(),
+                        !project.expanded,
+                        (icons::files::FolderOpen.into(), icons::files::Folder.into()),
+                        None,
+                    ),
+                    None => return Empty.into_any_element(),
+                },
+                Group::Space(ix) => match workspace.spaces.get(ix) {
+                    Some(space) => (
+                        space.label().to_owned(),
+                        workspace.space_folded(&space.id),
+                        (
+                            icons::layout::LayoutFreeform.into(),
+                            icons::layout::LayoutDashboard.into(),
+                        ),
+                        Some(space.id.clone()),
+                    ),
+                    None => return Empty.into_any_element(),
+                },
+            };
+        let folded = folded && self.applied_query().is_none();
+        let key = key_of(Row::Group(group));
         let carried = SharedString::from(name.clone());
-        // Both buttons stay on show while either one's menu is open. They are
+        let (menu, add) = match group {
+            Group::Project(ix) => (Menu::Project(ix), Some(Menu::Add(ix))),
+            Group::Space(_) => (Menu::Entry(Row::Group(group)), None),
+        };
+        // The buttons stay on show while either one's menu is open. They are
         // revealed by the row's hover, and the pointer leaves the row the
         // moment it reaches the card — which took the `+` away from under a
         // menu standing open beside it.
-        let held = matches!(self.menu, Some(Menu::Add(at) | Menu::Project(at)) if at == ix);
-        let reveal = (!held).then_some("project-head");
+        let held = self.menu.as_ref() == Some(&menu) || (add.is_some() && self.menu == add);
+        let reveal = (!held).then_some("group-head");
+        let renaming = space_id
+            .as_ref()
+            .is_some_and(|id| matches!(&self.renaming, Some(Renaming::Space(at)) if at == id));
+        let label = match renaming {
+            true => self.name_field(cx),
+            false => div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_style(TextStyle::Callout)
+                .font_weight(FontWeight::MEDIUM)
+                .line_height(px(18.))
+                .child(name)
+                .into_any_element(),
+        };
         let head = div()
-            .id(("project", ix))
-            .group("project-head")
-            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                this.sidebar_hover(Menu::Add(ix), *hovered, cx);
+            .id(SharedString::from(format!("group-{key}")))
+            .group("group-head")
+            .on_hover(cx.listener({
+                let menu = menu.clone();
+                move |this, hovered: &bool, _, cx| {
+                    this.sidebar_hover(menu.clone(), *hovered, cx);
+                }
             }))
             // Pinned it runs edge to edge, and past the band it shows in at
             // the top and the bottom — see [`PINNED_BLEED`]. The label keeps
@@ -704,87 +792,92 @@ impl Cydonia {
             .items_center()
             .gap(px(6.))
             .cursor_pointer()
-            // On the head, not the label: a name's colour is fixed when
-            // its text is laid out, and only this div is stateful enough
-            // to carry the hover that far.
-            .text_color(theme.text_faint)
+            // On the head, not the label: a name's colour is fixed when its
+            // text is laid out, and only this div is stateful enough to carry
+            // the hover that far.
+            .text_color(theme.text_muted)
             .hover(|el| el.text_color(theme.text))
             .child(
                 theme
-                    .ghost(("project-fold", ix))
+                    .ghost(SharedString::from(format!("group-fold-{key}")))
                     .flex_none()
                     .p(px(2.))
                     .child(
-                        icons::icon(match expanded {
-                            true => icons::files::FolderOpen,
-                            false => icons::files::Folder,
+                        icons::icon(match folded {
+                            false => marks.0,
+                            true => marks.1,
                         })
                         .size(px(14.))
-                        .text_color(theme.text_faint)
-                        .group_hover("project-head", |el| el.text_color(theme.text)),
+                        .text_color(theme.text_muted)
+                        .group_hover("group-head", |el| el.text_color(theme.text)),
                     )
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
-                        this.toggle_project(ix, cx);
+                        this.fold_group(group, cx);
                     })),
             )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_style(TextStyle::Callout)
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(name),
-            )
+            .child(label)
             // Ahead of the `+`, which is the one that gets pressed: sorting
             // and the rest are settled once and left alone.
             .child(
                 self.menu_button(
-                    SharedString::from(format!("project-menu-{ix}")),
+                    SharedString::from(format!("group-menu-{key}")),
                     reveal,
                     icons::layout::Ellipsis,
-                    Menu::Project(ix),
+                    menu,
                     cx,
                 )
                 // On the trigger, not the row: the card pins to the bottom
                 // left of whatever it is mounted on, and from the row it hangs
                 // off the far side of the sidebar rather than under the `···`.
-                .children(self.project_menu(ix, window, cx)),
+                // A space's is drawn by the row around it — see
+                // [`Self::sidebar_row`].
+                .children(match group {
+                    Group::Project(ix) => self.project_menu(ix, window, cx),
+                    Group::Space(_) => None,
+                }),
             )
-            .child(
-                self.menu_button(
-                    SharedString::from(format!("project-add-{ix}")),
-                    reveal,
-                    icons::math::Plus,
-                    Menu::Add(ix),
-                    cx,
-                )
-                .children(self.add_menu(ix, window, cx)),
-            )
+            .children(match group {
+                Group::Project(ix) => Some(
+                    self.menu_button(
+                        SharedString::from(format!("group-add-{key}")),
+                        reveal,
+                        icons::math::Plus,
+                        Menu::Add(ix),
+                        cx,
+                    )
+                    .children(self.add_menu(ix, window, cx)),
+                ),
+                Group::Space(_) => None,
+            })
             // A press on the copy is a press on where it came from: the list
             // goes back to the heading it is standing in for, rather than
-            // folding away the project you are reading. Its own folder mark
-            // still folds — that press stops before it reaches here.
+            // folding away what you are reading. Its own mark still folds —
+            // that press stops before it reaches here.
             .on_click(cx.listener(move |this, _, _, cx| match pinned {
-                true => this.scroll_to_project(ix, cx),
-                false => this.toggle_project(ix, cx),
+                true => this.scroll_to_group(group, cx),
+                false => this.fold_group(group, cx),
             }))
-            // Carried by its heading, and dropped on the heading it is to sit
-            // in front of. What the entries under it are ordered by is when
-            // they were last written, so they are not reordered by dragging —
-            // an entry is dragged onto a pane, not up the column.
-            .on_drag(ProjectDrag(ix), move |_, _, _, cx| {
+            // Carried by its heading, and dropped on the heading of its own
+            // kind it is to sit in front of.
+            .on_drag(GroupDrag(group), move |_, _, _, cx| {
                 let carried = carried.clone();
                 cx.new(|_| Carried(carried))
             })
-            .drag_over::<ProjectDrag>(move |style, _, _, cx| style.bg(Theme::of(cx).element_active))
-            .on_drop(cx.listener(move |this, drag: &ProjectDrag, _, cx| {
-                this.move_project(drag.0, ix, cx);
+            .drag_over::<GroupDrag>(move |style, drag, _, cx| match same_kind(drag.0, group) {
+                true => style.bg(Theme::of(cx).element_active),
+                false => style,
+            })
+            .on_drop(cx.listener(move |this, drag: &GroupDrag, _, cx| {
+                this.move_group(drag.0, group, cx);
             }));
-        // Its own menu opens on the press rather than the click, so the note
-        // has to be here too — read stale, a right press would swallow.
-        let head = self.menu_press(head, Menu::Project(ix), cx);
+        // A project's menu opens on the press rather than the click, so the
+        // note has to be here too — read stale, a right press would swallow.
+        // A space's opens from the row around it, as an entry's does.
+        let head = match group {
+            Group::Project(ix) => self.menu_press(head, Menu::Project(ix), cx),
+            Group::Space(_) => head,
+        };
         match pinned {
             // The same token the cluster at the foot of the column mounts on,
             // so the two glasses in the sidebar move together.
@@ -931,47 +1024,72 @@ impl Cydonia {
             .collect()
     }
 
-    /// Every space, and under each the rows it holds.
+    /// The rows listed under a group while it is open: a project's own
+    /// entries, or the ones a space arranges.
     ///
-    /// At the end of the list rather than inside a project: a space can hold
-    /// panes from several, so it belongs to none of them — see
-    /// [`crate::model::spaces`].
-    fn space_rows(&self, cx: &App) -> Vec<Row> {
-        let workspace = self.workspace.read(cx);
-        let mut rows = Vec::new();
-        if !workspace.spaces.is_empty() {
-            rows.push(Row::Spaces);
-        }
-        for (ix, space) in workspace.spaces.iter().enumerate() {
-            rows.push(Row::Space(ix));
-            if self.collapsed_spaces.contains(&space.id) {
-                continue;
-            }
-            // In the order the arrangement lays the panes out, so the list
-            // reads across the window.
-            //
-            // Only what this space is the holder of. One entry is in one
-            // space at a time — see [`Workspace::arrange`] — and the same
-            // answer decides both lists, so a file written before that held
-            // lists its entry once here rather than twice, and never beside the
-            // copy [`Self::ungrouped`] took out of the project.
-            rows.extend(
+    /// A space's are in the order the arrangement lays the panes out, so the
+    /// list reads across the window — and only what the space is the holder
+    /// of. One entry is in one space at a time — see [`Workspace::arrange`] —
+    /// and the same answer decides both lists, so a file written before that
+    /// held lists its entry once here rather than twice, and never beside the
+    /// copy [`Self::ungrouped`] took out of the project.
+    fn members(&self, group: Group, cx: &App) -> Vec<Row> {
+        match group {
+            Group::Project(ix) => self.entries(ix, cx),
+            Group::Space(ix) => {
+                let workspace = self.workspace.read(cx);
+                let Some(space) = workspace.spaces.get(ix) else {
+                    return Vec::new();
+                };
                 space
                     .entries()
                     .iter()
                     .filter(|member| workspace.space_holding(member) == Some(ix))
-                    .filter_map(|member| self.row_of_member(member, cx)),
-            );
+                    .filter_map(|member| self.row_of_member(member, cx))
+                    .collect()
+            }
         }
-        rows
     }
 
-    /// Fold a space's members away, or bring them back.
-    pub(crate) fn fold_space(&mut self, id: &str, cx: &mut Context<Self>) {
-        if !self.collapsed_spaces.remove(id) {
-            self.collapsed_spaces.insert(id.to_owned());
+    /// Whether a group's rows are folded away under it.
+    fn folded(&self, group: Group, cx: &App) -> bool {
+        let workspace = self.workspace.read(cx);
+        match group {
+            Group::Project(ix) => workspace
+                .projects
+                .get(ix)
+                .is_some_and(|open| !open.expanded),
+            Group::Space(ix) => workspace
+                .spaces
+                .get(ix)
+                .is_some_and(|space| workspace.space_folded(&space.id)),
         }
-        cx.notify();
+    }
+
+    /// Fold a group's rows away, or bring them back.
+    pub(crate) fn fold_group(&mut self, group: Group, cx: &mut Context<Self>) {
+        if self.applied_query().is_some() {
+            return;
+        }
+        self.commit(cx);
+        match group {
+            Group::Project(ix) => self
+                .workspace
+                .update(cx, |workspace, cx| workspace.toggle_project(ix, cx)),
+            Group::Space(ix) => {
+                let Some(id) = self
+                    .workspace
+                    .read(cx)
+                    .spaces
+                    .get(ix)
+                    .map(|space| space.id.clone())
+                else {
+                    return;
+                };
+                self.workspace
+                    .update(cx, |workspace, cx| workspace.toggle_space(&id, cx));
+            }
+        }
     }
 
     /// How far in a row is drawn: one step for a project's entries when that
@@ -987,15 +1105,15 @@ impl Cydonia {
             // A space is not inside a project — it can hold panes from
             // several — so its row starts at the column's edge, where the
             // project headings are.
-            Row::Space(_) | Row::Spaces => return 0,
-            Row::Project(_) | Row::Archive(_) => return base,
+            Row::Group(Group::Space(_)) | Row::Heading(_) => return 0,
+            Row::Group(Group::Project(_)) | Row::Archive(_) => return base,
             _ => {}
         }
         let held = || -> Option<()> {
             let member = self.member_of_row(row, cx)?;
             let at = workspace.space_holding(&member)?;
             let space = workspace.spaces.get(at)?;
-            (!self.collapsed_spaces.contains(&space.id)).then_some(())
+            (self.applied_query().is_some() || !workspace.space_folded(&space.id)).then_some(())
         };
         // One step under the space holding it, and one only: a row listed
         // there is not also under its project's heading, so the project's own
@@ -1022,16 +1140,70 @@ impl Cydonia {
     /// thousand articles costs a thousand `Row`s here and reads a title for
     /// none of them.
     pub(crate) fn rows(&self, cx: &Context<Self>) -> Vec<Row> {
+        let workspace = self.workspace.read(cx);
+        let projects = (0..workspace.projects.len()).map(Group::Project);
+        let spaces = (0..workspace.spaces.len()).map(Group::Space);
+        // The projects' heading whether or not any are open: it holds the way
+        // to open one. After the projects, the spaces, because a space is not
+        // inside one.
+        let mut sections = vec![(Heading::Projects, projects.collect::<Vec<_>>())];
+        if !workspace.spaces.is_empty() {
+            sections.push((Heading::Spaces, spaces.collect()));
+        }
         let mut rows = Vec::new();
-        for p in 0..self.workspace.read(cx).projects.len() {
-            rows.push(Row::Project(p));
-            if self.workspace.read(cx).projects[p].expanded {
-                rows.extend(self.entries(p, cx));
+        if let Some(matches) = self.applied_rows(cx) {
+            for (heading, groups) in sections {
+                let start = rows.len();
+                rows.push(Row::Heading(heading));
+                for group in groups {
+                    let members = match group {
+                        Group::Project(ix) => self.ungrouped(
+                            self.ranked(ix, cx).into_iter().map(|e| e.row).collect(),
+                            cx,
+                        ),
+                        Group::Space(_) => self.members(group, cx),
+                    };
+                    let members: Vec<_> = members
+                        .into_iter()
+                        .filter(|row| matches.contains(row))
+                        .collect();
+                    if !members.is_empty() {
+                        rows.push(Row::Group(group));
+                        rows.extend(members);
+                    }
+                }
+                if rows.len() == start + 1 {
+                    rows.pop();
+                }
+            }
+            return rows;
+        }
+        for (heading, groups) in sections {
+            rows.push(Row::Heading(heading));
+            if workspace.section_folded(heading.key()) {
+                continue;
+            }
+            for group in groups {
+                rows.push(Row::Group(group));
+                if !self.folded(group, cx) {
+                    rows.extend(self.members(group, cx));
+                }
             }
         }
-        // After the projects, because a space is not inside one.
-        rows.extend(self.space_rows(cx));
         rows
+    }
+
+    /// Every open project's entries still in use, most recently touched first,
+    /// with what a switch hides left out.
+    pub(crate) fn recent_rows(&self, cx: &App) -> Vec<Row> {
+        let workspace = self.workspace.read(cx);
+        let features = &workspace.settings.features;
+        let mut entries: Vec<Ranked> = (0..workspace.projects.len())
+            .flat_map(|project| self.ranked(project, cx))
+            .filter(|entry| !entry.archived && shown(entry.row, features))
+            .collect();
+        entries.sort_by_key(|entry| std::cmp::Reverse(entry.touched));
+        entries.into_iter().map(|entry| entry.row).collect()
     }
 
     /// Open what a row points at — what a keyboard step does with its landing.
@@ -1039,24 +1211,24 @@ impl Cydonia {
     /// `on_click`, which needs no [`Row`] to know what it is.
     pub(crate) fn open_row(&mut self, row: Row, window: &mut Window, cx: &mut Context<Self>) {
         match row {
-            Row::Project(ix) => self.select_project(ix, cx),
+            Row::Group(Group::Project(ix)) => self.select_project(ix, cx),
             Row::Archive(ix) => self.toggle_archive(ix, cx),
             Row::Session { id, .. } => self.select_session(id, window, cx),
             Row::Board { project, ix } => self.open_board(project, ix, window, cx),
             Row::Article { project, ix } => self.open_article(project, ix, window, cx),
             Row::Table { project, ix } => self.open_table(project, ix, window, cx),
-            Row::Space(ix) => self.open_space(ix, window, cx),
-            // A heading over the spaces, and nothing to open.
-            Row::Spaces => {}
+            Row::Group(Group::Space(ix)) => self.open_space(ix, window, cx),
+            // A heading over a section, and nothing to open.
+            Row::Heading(_) => {}
         }
     }
 
-    /// Take the list back to where a project starts, heading and all.
-    fn scroll_to_project(&mut self, ix: usize, cx: &mut Context<Self>) {
+    /// Take the list back to where a group starts, heading and all.
+    fn scroll_to_group(&mut self, group: Group, cx: &mut Context<Self>) {
         let Some(at) = self
             .rows(cx)
             .iter()
-            .position(|row| *row == Row::Project(ix))
+            .position(|row| *row == Row::Group(group))
         else {
             return;
         };
@@ -1079,7 +1251,7 @@ impl Cydonia {
     fn sidebar_row(&self, row: Row, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let workspace = self.workspace.read(cx);
         let inner = match row {
-            Row::Project(ix) => self.project_head(ix, false, window, cx),
+            Row::Group(group) => self.group_head(group, false, window, cx),
             Row::Archive(ix) => self.archive_divider(ix, cx),
             Row::Session { project, id } => match self.session_of(project, id, cx) {
                 Some(session) => self.session_row(session, window, cx),
@@ -1119,12 +1291,14 @@ impl Cydonia {
                     None => Empty.into_any_element(),
                 }
             }
-            Row::Space(ix) => self.space_row(ix, cx),
-            Row::Spaces => self.spaces_label(cx),
+            Row::Heading(heading) => self.heading_row(heading, cx),
         };
         let carried = self.drag_of_row(row, cx);
         let label = SharedString::from(self.label_of_row(row, cx));
-        let entry = !matches!(row, Row::Project(_) | Row::Archive(_) | Row::Spaces);
+        let entry = !matches!(
+            row,
+            Row::Group(Group::Project(_)) | Row::Archive(_) | Row::Heading(_)
+        );
         let archived = self.archived_of(row, cx);
         div()
             .id(SharedString::from(format!("sidebar-hover-{}", key_of(row))))
@@ -1176,12 +1350,12 @@ impl Cydonia {
     }
 
     /// What the row is called, for the ghost that follows the pointer.
-    fn label_of_row(&self, row: Row, cx: &Context<Self>) -> String {
+    pub(crate) fn label_of_row(&self, row: Row, cx: &Context<Self>) -> String {
         let workspace = self.workspace.read(cx);
         let named = || -> Option<String> {
             Some(match row {
-                Row::Project(_) | Row::Archive(_) | Row::Spaces => return None,
-                Row::Space(ix) => workspace.spaces.get(ix)?.label().to_owned(),
+                Row::Group(Group::Project(_)) | Row::Archive(_) | Row::Heading(_) => return None,
+                Row::Group(Group::Space(ix)) => workspace.spaces.get(ix)?.label().to_owned(),
                 Row::Session { project, id } => {
                     workspace.projects.get(project)?.session(id)?.label()
                 }
@@ -1212,12 +1386,31 @@ impl Cydonia {
     }
 
     /// Whether a space is what the window is showing.
-    ///
-    /// While one is, the sidebar lights its row and no other: the entries it
-    /// arranges are listed as themselves, and lighting them too would leave
-    /// the column with no one row that says what is open.
     pub(crate) fn arranged(&self, cx: &App) -> bool {
         self.workspace.read(cx).active_space().is_some()
+    }
+
+    /// How a row's entry stands to what the window is showing — see
+    /// [`Light`]. In a space, the focused pane's entry is the lit one and the
+    /// others it shows are [`Light::Shown`]; on one entry alone, that entry.
+    pub(crate) fn light_of(&self, row: Row, cx: &App) -> Light {
+        let workspace = self.workspace.read(cx);
+        let Some(space) = workspace.active_space() else {
+            return match self.in_front(row, cx) {
+                true => Light::Focused,
+                false => Light::Off,
+            };
+        };
+        let Some(member) = self.member_of_row(row, cx) else {
+            return Light::Off;
+        };
+        if self.leaf().entry.as_ref() == Some(&member) {
+            Light::Focused
+        } else if space.entries().contains(&member) {
+            Light::Shown
+        } else {
+            Light::Off
+        }
     }
 
     /// Put the carried entry where `onto` is, and write the project's order
@@ -1347,26 +1540,66 @@ impl Cydonia {
         .into_any_element()
     }
 
-    /// The line the spaces are listed under.
-    ///
-    /// It says what the rows below it are, which the rows cannot: a space is
-    /// not inside a project, so what follows the last project would otherwise
-    /// read as more of it. Nothing folds here — each space carries its own
-    /// fold, and a second one over the group would be two ways to hide a row.
-    fn spaces_label(&self, cx: &mut Context<Self>) -> AnyElement {
+    /// A section's heading: a press folds the section, and the chevron beside
+    /// the label, shown while the pointer is on the heading, says which way it
+    /// stands. The projects' also holds the way to
+    /// open another, shown while the pointer is on the heading.
+    fn heading_row(&self, heading: Heading, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::of(cx).clone();
-        // Not [`row`]: that carries the pointer and the hover wash, which say
-        // a press does something. Nothing answers one here.
-        div()
-            .h(px(ROW_PILL))
-            .mx(px(root::SIDEBAR_GUTTER))
-            .px(px(root::SIDEBAR_GUTTER))
-            .flex()
-            .flex_row()
-            .items_center()
-            .text_style(TextStyle::Callout)
+        let folded =
+            self.applied_query().is_none() && self.workspace.read(cx).section_folded(heading.key());
+        let group: &'static str = match heading {
+            Heading::Projects => "projects-heading",
+            Heading::Spaces => "spaces-heading",
+        };
+        let open = matches!(heading, Heading::Projects).then(|| {
+            let chord = keymap::label(
+                Command::OpenProject,
+                &self.workspace.read(cx).settings.shortcuts,
+            );
+            // The square every `···` and `+` in this column is, in the
+            // heading's ink.
+            theme
+                .tinted_icon_button(icons::math::Plus, theme.text_faint)
+                .id("open-project")
+                .flex_none()
+                .invisible()
+                .group_hover(group, |el| el.visible())
+                .tooltip(move |window, cx| match chord.clone() {
+                    Some(chord) => Tooltip::with_keystroke("Open project", chord, window, cx),
+                    None => Tooltip::text("Open project", window, cx),
+                })
+                .on_click(cx.listener(|this, _, window, cx| {
+                    cx.stop_propagation();
+                    this.open_project_action(&OpenProject, window, cx);
+                }))
+        });
+        // A row's frame without its washes, the label ahead of its chevron.
+        row_frame(group, group, 0)
             .text_color(theme.text_faint)
-            .child("Spaces")
+            .child(
+                div()
+                    .flex_none()
+                    .text_style(TextStyle::Callout)
+                    .child(heading.label()),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .invisible()
+                    .group_hover(group, |el| el.visible())
+                    .child(theme.disclosure(!folded).text_color(theme.text_faint)),
+            )
+            .child(div().flex_1())
+            .children(open)
+            .on_click(cx.listener(move |this, _, _, cx| {
+                if this.applied_query().is_some() {
+                    return;
+                }
+                this.workspace.update(cx, |workspace, cx| {
+                    workspace.toggle_section(heading.key(), cx)
+                });
+            }))
             .into_any_element()
     }
 
@@ -1396,10 +1629,13 @@ impl Cydonia {
             .update(cx, |workspace, cx| workspace.move_space(from, to, cx));
     }
 
-    fn toggle_project(&mut self, ix: usize, cx: &mut Context<Self>) {
-        self.commit(cx);
-        self.workspace
-            .update(cx, |workspace, cx| workspace.toggle_project(ix, cx));
+    /// Carry a group in front of another of its kind.
+    fn move_group(&mut self, from: Group, to: Group, cx: &mut Context<Self>) {
+        match (from, to) {
+            (Group::Project(from), Group::Project(to)) => self.move_project(from, to, cx),
+            (Group::Space(from), Group::Space(to)) => self.move_space(from, to, cx),
+            _ => {}
+        }
     }
 
     /// What the `+` starts here. Session first: it is what the sidebar is for.
@@ -1571,10 +1807,9 @@ impl Cydonia {
         };
         let theme = Theme::of(cx).clone();
         let id = session.id;
-        let selected = !self.arranged(cx)
-            && self.showing(cx) == Some(Pane::Chat)
-            && self.workspace.read(cx).active_id() == Some(id);
-        let tint = tint(selected, session.archived, &theme);
+        let light = self.light_of(entry, cx);
+        let selected = light.selected();
+        let tint = light.tint(session.archived, &theme);
         // The agent's own mark, in the label's colour rather than any of its
         // own: every icon the registry publishes is a `currentColor` glyph, so
         // tinting is the only colour it will ever have. While a turn is in
@@ -1637,103 +1872,6 @@ impl Cydonia {
         .into_any_element()
     }
 
-    /// One space: the arrangement, and how many panes it holds.
-    ///
-    /// While it is open its members are listed under it rather than under their
-    /// projects — see [`Self::ungrouped`].
-    fn space_row(&self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
-        let theme = Theme::of(cx).clone();
-        let workspace = self.workspace.read(cx);
-        let selected = workspace.space == Some(ix);
-        let entry = Row::Space(ix);
-        let Some((name, id)) = workspace
-            .spaces
-            .get(ix)
-            .map(|space| (space.label().to_owned(), space.id.clone()))
-        else {
-            return Empty.into_any_element();
-        };
-        let indent = self.indent_of(entry, cx);
-        // A heading rather than another entry row. Nothing is drawn on the
-        // rows it holds — a rule has nothing to mark without an indent to run
-        // down, and a wash behind the group reads as a second row state. What
-        // says they belong to it is that it is written as a heading and they
-        // are directly under it, which is what `Archived` above them does and
-        // what the sidebar already reads as.
-        let tint = match selected {
-            true => tint(selected, false, &theme),
-            false => theme.text_faint,
-        };
-        let name_of_row = name.clone();
-        let label = match matches!(&self.renaming, Some(Renaming::Space(at)) if *at == id) {
-            true => self.name_field(cx),
-            false => row_heading(name, tint),
-        };
-        let folded = self.collapsed_spaces.contains(&id);
-        let held = id.clone();
-        let carried = SharedString::from(name_of_row.clone());
-        row(("space", ix), "space-row", selected, indent, &theme)
-            // The mark carries the fold, the way a project's folder does
-            // rather than standing a chevron beside it: open, the panes it
-            // holds are listed under it; closed, it is the arrangement alone.
-            .child(
-                div()
-                    .id(("space-fold", ix))
-                    .flex_none()
-                    .size(px(14.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .cursor_pointer()
-                    .child(
-                        icons::icon(match folded {
-                            true => icons::layout::LayoutDashboard,
-                            false => icons::layout::LayoutFreeform,
-                        })
-                        .size(px(14.))
-                        .text_color(tint),
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        // Only the mark: a press on the row itself opens the
-                        // space, which is the other thing the row is for.
-                        cx.stop_propagation();
-                        this.fold_space(&held, cx);
-                    })),
-            )
-            .child(label)
-            // A space has no archive button of its own: putting one away
-            // takes its members with it, which is a `···` decision rather than
-            // a press in passing. Rename lives here too — a space has no band
-            // to be renamed in, since the window draws none while one is open.
-            .child(
-                self.menu_button(
-                    SharedString::from(format!("space-menu-{ix}")),
-                    None,
-                    icons::layout::Ellipsis,
-                    Menu::Entry(entry),
-                    cx,
-                )
-                .flex_none()
-                .when(
-                    self.sidebar_hovered.as_ref() != Some(&Menu::Entry(entry))
-                        && self.menu.as_ref() != Some(&Menu::Entry(entry)),
-                    |el| el.hidden(),
-                ),
-            )
-            .on_click(cx.listener(move |this, _, window, cx| this.open_space(ix, window, cx)))
-            // Carried by its row and dropped on the row it is to sit in front
-            // of, the way a project heading is — see [`Self::project_head`].
-            .on_drag(SpaceDrag(ix), move |_, _, _, cx| {
-                let carried = carried.clone();
-                cx.new(|_| Carried(carried))
-            })
-            .drag_over::<SpaceDrag>(move |style, _, _, cx| style.bg(Theme::of(cx).element_active))
-            .on_drop(cx.listener(move |this, drag: &SpaceDrag, _, cx| {
-                this.move_space(drag.0, ix, cx);
-            }))
-            .into_any_element()
-    }
-
     /// One board: its mark and its name.
     fn board_row(
         &self,
@@ -1745,20 +1883,15 @@ impl Cydonia {
     ) -> AnyElement {
         let theme = Theme::of(cx).clone();
         let workspace = self.workspace.read(cx);
-        let selected = !self.arranged(cx)
-            && self.showing(cx) == Some(Pane::Board)
-            && workspace.active == Some(project)
-            && workspace
-                .projects
-                .get(project)
-                .is_some_and(|open| open.board == Some(ix));
         let entry = Row::Board { project, ix };
+        let light = self.light_of(entry, cx);
+        let selected = light.selected();
         let board = workspace
             .projects
             .get(project)
             .and_then(|open| open.boards.get(ix));
         let archived = board.is_some_and(|board| board.archived);
-        let tint = tint(selected, archived, &theme);
+        let tint = light.tint(archived, &theme);
         // No inline field on a board's row, ever: a board is named by its panel
         // — see [`Self::rename_entry`].
         let label = row_label(name, tint);
@@ -1914,7 +2047,7 @@ impl Cydonia {
                 .get(project)
                 .and_then(|open| open.tables.get(ix))
                 .is_some_and(|table| table.archived),
-            Row::Space(_) | Row::Project(_) | Row::Archive(_) | Row::Spaces => false,
+            Row::Group(_) | Row::Archive(_) | Row::Heading(_) => false,
         }
     }
 
@@ -2123,8 +2256,8 @@ impl Cydonia {
             Row::Board { project, ix } => workspace.delete_board(project, ix, cx),
             Row::Article { project, ix } => workspace.delete_article(project, ix, cx),
             Row::Table { project, ix } => workspace.delete_table(project, ix, cx),
-            Row::Space(ix) => workspace.delete_space(ix, cx),
-            Row::Project(_) | Row::Archive(_) | Row::Spaces => {}
+            Row::Group(Group::Space(ix)) => workspace.delete_space(ix, cx),
+            Row::Group(Group::Project(_)) | Row::Archive(_) | Row::Heading(_) => {}
         });
         if let Some(project) = landing_project
             && let Some(landing) = self
@@ -2170,15 +2303,16 @@ impl Cydonia {
                 .map(|table| Renaming::Table(table.key.clone())),
             // An article is named in its own page, and the two that are not
             // entries have no name to take.
-            Row::Space(ix) => workspace
+            Row::Group(Group::Space(ix)) => workspace
                 .spaces
                 .get(ix)
                 .map(|space| Renaming::Space(space.id.clone())),
             Row::Article { .. }
             | Row::Board { .. }
-            | Row::Project(_)
+            | Row::Group(Group::Project(_))
             | Row::Archive(_)
-            | Row::Spaces => None,
+            | Row::Heading(Heading::Projects)
+            | Row::Heading(Heading::Spaces) => None,
         };
         if let Some(what) = what {
             self.start_rename(what, window, cx);
@@ -2211,7 +2345,7 @@ impl Cydonia {
         // because archiving a member takes it out of the space as it goes —
         // see [`Workspace::drop_from_spaces`] — and that shifts every index
         // past it.
-        if let Row::Space(ix) = entry {
+        if let Row::Group(Group::Space(ix)) = entry {
             let workspace = self.workspace.read(cx);
             let Some(space) = workspace.spaces.get(ix) else {
                 return;
@@ -2244,7 +2378,7 @@ impl Cydonia {
             });
         }
         self.workspace.update(cx, |workspace, cx| match entry {
-            Row::Space(_) => {}
+            Row::Group(Group::Space(_)) => {}
             Row::Session { id, .. } => workspace.archive_session(id, archived, cx),
             Row::Board { project, ix } => {
                 if let Some(id) = workspace
@@ -2276,7 +2410,7 @@ impl Cydonia {
                     workspace.archive_table(&key, archived, cx);
                 }
             }
-            Row::Project(_) | Row::Archive(_) | Row::Spaces => {}
+            Row::Group(Group::Project(_)) | Row::Archive(_) | Row::Heading(_) => {}
         });
         if let Some(project) = landing {
             self.open_top_entry(project, window, cx);
