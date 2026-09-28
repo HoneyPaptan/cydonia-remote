@@ -79,7 +79,7 @@ impl Section {
     /// the viewport — see [`SettingsWindow::agents_list`]. Everything else is
     /// a page of boxes, and the page scrolls it.
     pub(super) fn owns_scroll(&self) -> bool {
-        matches!(self, Self::Agents) && cfg!(feature = "desktop")
+        matches!(self, Self::Agents)
     }
 
     const ALL: [Self; 9] = [
@@ -105,7 +105,11 @@ impl Section {
     /// `make bundle FEATURES=developer` is that bundle built at the profile
     /// that ships rather than at `debug`.
     fn listed(self) -> bool {
-        !matches!(self, Self::Developer) || cfg!(debug_assertions) || cfg!(feature = "developer")
+        match self {
+            Self::Developer => cfg!(debug_assertions) || cfg!(feature = "developer"),
+            Self::Shortcuts => cfg!(feature = "desktop"),
+            _ => true,
+        }
     }
 
     fn title(self) -> &'static str {
@@ -189,7 +193,6 @@ pub struct SettingsWindow {
     /// out on every frame a scroll draws — which is where this section's time
     /// went, measured. Keyed by agent id, so narrowing the search reconciles
     /// against what is on screen rather than scrolling it.
-    #[cfg(feature = "desktop")]
     agents_list: bezel::ui::list::VariableList<String>,
     /// What the installer has printed for each of them, newest last: the tail
     /// is the row's status while it runs, and the whole of it is all a failure
@@ -331,7 +334,6 @@ impl SettingsWindow {
             busy: HashSet::new(),
             #[cfg(feature = "desktop")]
             trusting: None,
-            #[cfg(feature = "desktop")]
             agents_list: {
                 let list = bezel::ui::list::VariableList::default();
                 // A catalogue is read from the top. Following the tail

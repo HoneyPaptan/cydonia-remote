@@ -60,11 +60,14 @@ impl SettingsWindow {
             Err(_) => self.agents_note("Reading the registry on the laptop", cx),
         };
         div()
+            .flex_1()
+            .min_h_0()
             .flex()
             .flex_col()
             .gap(px(super::GROUP_GAP))
             .child(
                 div()
+                    .flex_none()
                     .flex()
                     .flex_col()
                     .gap(px(super::LABEL_GAP))
@@ -73,10 +76,12 @@ impl SettingsWindow {
             )
             .child(
                 div()
+                    .flex_1()
+                    .min_h_0()
                     .flex()
                     .flex_col()
                     .gap(px(super::LABEL_GAP))
-                    .child(theme.field_label("Registry"))
+                    .child(theme.field_label("Registry").flex_none())
                     .child(catalogue),
             )
             .into_any_element()
@@ -113,12 +118,27 @@ impl SettingsWindow {
 
     fn catalogue(&self, agents: Vec<AgentListing>, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::of(cx).clone();
-        let rows: Vec<AnyElement> = agents
-            .into_iter()
-            .enumerate()
-            .map(|(ix, listing)| self.listing_row(ix, listing, cx))
-            .collect();
-        theme.group_box().children(rows).into_any_element()
+        let filling = self.agents_list.state.item_count() == 0;
+        self.agents_list
+            .sync(agents.iter().map(|listing| listing.id.clone()).collect());
+        if filling {
+            self.agents_list.scroll_to(0);
+        }
+        let view = cx.entity();
+        theme
+            .group_box()
+            .flex_1()
+            .min_h_0()
+            .child(div().flex_1().min_h_0().child(self.agents_list.render(
+                move |at, _, cx| {
+                    let Some(listing) = agents.get(at).cloned() else {
+                        return div().into_any_element();
+                    };
+                    view.update(cx, |this, cx| this.listing_row(at, listing, cx))
+                },
+                |_, _, _| {},
+            )))
+            .into_any_element()
     }
 
     fn listing_row(&self, ix: usize, listing: AgentListing, cx: &mut Context<Self>) -> AnyElement {
@@ -164,6 +184,7 @@ impl SettingsWindow {
         };
         theme
             .card_row(ix == 0)
+            .w_full()
             .gap(px(12.))
             .child(
                 div()
