@@ -184,6 +184,52 @@ pub enum Action {
         agent: Option<String>,
         text: Option<String>,
     },
+    CreateBoard {
+        project: String,
+        name: String,
+        key: String,
+    },
+    SaveBoard {
+        project: String,
+        board: String,
+    },
+    RemoveBoard {
+        project: String,
+        id: String,
+    },
+    CreateArticle {
+        project: String,
+        markdown: String,
+    },
+    WriteArticle {
+        project: String,
+        id: String,
+        markdown: String,
+    },
+    SaveProperties {
+        project: String,
+        id: String,
+        properties: String,
+    },
+    RemoveArticle {
+        project: String,
+        id: String,
+    },
+}
+
+impl Action {
+    pub fn written_project(&self) -> Option<&str> {
+        match self {
+            Action::CreateBoard { project, .. }
+            | Action::SaveBoard { project, .. }
+            | Action::RemoveBoard { project, .. }
+            | Action::CreateArticle { project, .. }
+            | Action::WriteArticle { project, .. }
+            | Action::SaveProperties { project, .. }
+            | Action::RemoveArticle { project, .. } => Some(project),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -207,6 +253,8 @@ pub enum Reason {
     UnknownSession,
     UnknownAgent,
     StalePermission,
+    Conflict,
+    Invalid,
     Closed,
     Unavailable,
 }

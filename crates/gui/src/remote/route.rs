@@ -1,7 +1,18 @@
-use crate::model::{project::Project, session::ChatSession, workspace::Workspace};
+use crate::model::{
+    project::Project,
+    session::ChatSession,
+    store::{self, Store},
+    workspace::Workspace,
+};
+use anyhow::Result;
+use artifact::{
+    article::properties,
+    board::Board,
+    project::{Project as _, Stale},
+};
 use bezel::gpui::Context;
 use remote::proto::{Action, Outcome, Reason, SessionKey};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn rejected(reason: Reason) -> Outcome {
     Outcome::Rejected { reason }
@@ -23,7 +34,48 @@ pub fn standing(chat: &ChatSession, request: u64, option: &str) -> bool {
     })
 }
 
+pub fn perform(store: &Store, action: &Action) -> Result<()> {
+    match action {
+        Action::CreateBoard { name, key, .. } => store.create_board(name, key).map(drop),
+        Action::SaveBoard { board, .. } => store.save_board(&mut toml::from_str::<Board>(board)?),
+        Action::RemoveBoard { id, .. } => store.remove_board(id),
+        Action::CreateArticle { markdown, .. } => store.create_article(markdown).map(drop),
+        Action::WriteArticle { id, markdown, .. } => store.write_article(id, markdown),
+        Action::SaveProperties {
+            id,
+            properties: text,
+            ..
+        } => store.save_properties(id, &properties::parse(text)),
+        Action::RemoveArticle { id, .. } => store.remove_article(id),
+        _ => Ok(()),
+    }
+}
+
+fn written(workspace: &mut Workspace, action: &Action, cx: &mut Context<Workspace>) -> Outcome {
+    let Some(path) = action.written_project().map(PathBuf::from) else {
+        return rejected(Reason::Invalid);
+    };
+    if !workspace
+        .projects
+        .iter()
+        .any(|project| project.path == path)
+    {
+        return rejected(Reason::UnknownProject);
+    }
+    match perform(&store::open(&path), action) {
+        Ok(()) => {
+            workspace.reload_project(&path, cx);
+            Outcome::Accepted
+        }
+        Err(error) if error.is::<Stale>() => rejected(Reason::Conflict),
+        Err(_) => rejected(Reason::Invalid),
+    }
+}
+
 pub fn route(workspace: &mut Workspace, action: Action, cx: &mut Context<Workspace>) -> Outcome {
+    if action.written_project().is_some() {
+        return written(workspace, &action, cx);
+    }
     match action {
         Action::SendPrompt { key, text } => {
             let Some(id) = find(&workspace.projects, &key) else {
@@ -87,5 +139,6 @@ pub fn route(workspace: &mut Workspace, action: Action, cx: &mut Context<Workspa
                 None => rejected(Reason::Unavailable),
             }
         }
+        _ => rejected(Reason::Invalid),
     }
 }

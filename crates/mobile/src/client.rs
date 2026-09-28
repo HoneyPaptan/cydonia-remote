@@ -7,7 +7,10 @@ use bezel::gpui::{App, Application, ApplicationHandle, AsyncApp, Entity};
 use futures::{StreamExt as _, channel::mpsc};
 use gui::{
     boot,
-    model::{sink::Sink, workspace::Workspace},
+    model::{
+        sink::{Sink, Write},
+        workspace::Workspace,
+    },
     view::root,
 };
 use remote::{
@@ -108,6 +111,12 @@ impl Sink for Commands {
             request,
             option,
         });
+    }
+
+    fn write(&self, project: &Path, write: Write) {
+        if let Some(action) = crate::write::action(project.to_string_lossy().into_owned(), write) {
+            self.deliver(action);
+        }
     }
 
     fn new_session(&self, project: &Path, agent: &str, text: Option<String>) {

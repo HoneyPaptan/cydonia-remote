@@ -49,7 +49,7 @@ pub fn memory_project(project: &ProjectView) -> memory::Project {
 }
 
 pub fn project(project: &ProjectView) {
-    store::seed(project.path.clone(), memory_project(project));
+    store::relay(project.path.clone(), memory_project(project));
 }
 
 pub fn agent(name: &str) -> Agent {

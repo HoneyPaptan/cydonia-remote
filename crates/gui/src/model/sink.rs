@@ -1,10 +1,22 @@
+use artifact::{article::properties::Properties, board::Board};
 use std::{cell::RefCell, path::Path, rc::Rc};
+
+pub enum Write {
+    CreateBoard { name: String, key: String },
+    SaveBoard(Board),
+    RemoveBoard(String),
+    CreateArticle(String),
+    WriteArticle { id: String, markdown: String },
+    SaveProperties { id: String, properties: Properties },
+    RemoveArticle(String),
+}
 
 pub trait Sink {
     fn send_prompt(&self, project: &Path, record: &str, text: String);
     fn cancel(&self, project: &Path, record: &str);
     fn respond_permission(&self, project: &Path, record: &str, request: u64, option: String);
     fn new_session(&self, project: &Path, agent: &str, text: Option<String>);
+    fn write(&self, project: &Path, write: Write);
 }
 
 thread_local! {

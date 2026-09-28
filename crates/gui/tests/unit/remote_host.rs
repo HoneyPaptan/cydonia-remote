@@ -6,7 +6,7 @@ use crate::model::{
 use artifact::session::{chat::ChatItem, record::Record};
 use cacp::schema::PermissionOptionKind;
 use remote::proto::{SessionKey, Status};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 const BOARD: &str = r#"
 id = "road"
@@ -177,4 +177,68 @@ fn files_are_exported_once_until_a_reload_asks_again() {
     publisher.reread();
     let fresh = publisher.mirror(&projects, &[agent()]);
     assert!(!fresh.projects[0].files.contains_key("boards/road.toml"));
+}
+
+fn fs_project(name: &str) -> (PathBuf, crate::model::store::Store) {
+    let dir = std::env::temp_dir().join(format!(
+        "cydonia-remote-write-{}-{name}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join(".cydonia/boards")).unwrap();
+    std::fs::write(dir.join(".cydonia/boards/road.toml"), BOARD).unwrap();
+    let store = crate::model::store::open(&dir);
+    (dir, store)
+}
+
+fn project_of(dir: &Path) -> String {
+    dir.to_string_lossy().into_owned()
+}
+
+#[test]
+fn a_saved_board_from_the_phone_lands_on_disk() {
+    let (dir, store) = fs_project("save-board");
+    let mut board = store.board("road").unwrap();
+    board.name = "Roadmap, from the phone".into();
+    let action = remote::proto::Action::SaveBoard {
+        project: project_of(&dir),
+        board: toml::to_string(&board).unwrap(),
+    };
+    super::route::perform(&store, &action).unwrap();
+    assert_eq!(store.board("road").unwrap().name, "Roadmap, from the phone");
+}
+
+#[test]
+fn articles_created_and_written_from_the_phone_land_on_disk() {
+    let (dir, store) = fs_project("articles");
+    super::route::perform(
+        &store,
+        &remote::proto::Action::CreateArticle {
+            project: project_of(&dir),
+            markdown: "# Plan".into(),
+        },
+    )
+    .unwrap();
+    let id = store.articles()[0].id.clone();
+    super::route::perform(
+        &store,
+        &remote::proto::Action::WriteArticle {
+            project: project_of(&dir),
+            id: id.clone(),
+            markdown: "# Plan\n\nShip it.".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(store.read_article(&id).unwrap(), "# Plan\n\nShip it.");
+}
+
+#[test]
+fn a_malformed_board_is_refused_and_nothing_changes() {
+    let (dir, store) = fs_project("malformed");
+    let action = remote::proto::Action::SaveBoard {
+        project: project_of(&dir),
+        board: "name = [".into(),
+    };
+    assert!(super::route::perform(&store, &action).is_err());
+    assert_eq!(store.board("road").unwrap().name, "Roadmap");
 }

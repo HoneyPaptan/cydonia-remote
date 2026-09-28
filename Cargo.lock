@@ -2504,6 +2504,7 @@ dependencies = [
  "futures",
  "js-sys",
  "serde_json",
+ "toml 0.8.23",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",

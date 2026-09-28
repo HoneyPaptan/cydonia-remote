@@ -320,6 +320,27 @@ fn a_phone_drives_a_laptop_session_end_to_end() {
     );
     eventually(|| has(&transcript(&daemon, &home, &key), "permission allow").then_some(()));
 
+    let board = "id = \"launch\"\nname = \"Launch, renamed on the phone\"\nkey = \"LAUNCH\"\n";
+    assert_eq!(
+        send(
+            &daemon,
+            &home,
+            "board-1",
+            Action::SaveBoard {
+                project: home.project(),
+                board: board.into(),
+            },
+        ),
+        Outcome::Accepted
+    );
+    eventually(|| {
+        let snapshot = snapshot_of(&daemon, &home).ok()?;
+        let file = snapshot.projects[0].files.get("boards/launch.toml")?;
+        String::from_utf8_lossy(&file.0)
+            .contains("Launch, renamed on the phone")
+            .then_some(())
+    });
+
     let epoch = snapshot_of(&daemon, &home).unwrap().epoch;
     drop(daemon);
     let restarted = start(&home);

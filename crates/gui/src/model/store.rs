@@ -5,6 +5,7 @@
 //! the backend: the memory project [`seed`] put at a path, else the files
 //! there.
 
+use crate::model::sink::{self, Write};
 use anyhow::Result;
 use artifact::{
     article::{Article, properties::Properties},
@@ -23,22 +24,43 @@ use std::{
 pub enum Store {
     Fs(fs::Project),
     Memory(Arc<memory::Project>),
+    Relayed(Arc<memory::Project>, Arc<Path>),
+}
+
+#[derive(Clone)]
+struct Held {
+    project: Arc<memory::Project>,
+    relayed: bool,
 }
 
 /// Projects held in memory, by the path they stand at, for the life of the
 /// process.
-fn seeded() -> &'static Mutex<HashMap<PathBuf, Arc<memory::Project>>> {
-    static SEEDED: OnceLock<Mutex<HashMap<PathBuf, Arc<memory::Project>>>> = OnceLock::new();
+fn seeded() -> &'static Mutex<HashMap<PathBuf, Held>> {
+    static SEEDED: OnceLock<Mutex<HashMap<PathBuf, Held>>> = OnceLock::new();
     SEEDED.get_or_init(Default::default)
 }
 
 /// Stand `project` at `path`: every [`open`] of that path answers it from here
 /// on, and nothing is read from or written to the disk there.
 pub fn seed(path: impl Into<PathBuf>, project: memory::Project) {
+    hold(path.into(), project, false);
+}
+
+pub fn relay(path: impl Into<PathBuf>, project: memory::Project) {
+    hold(path.into(), project, true);
+}
+
+fn hold(path: PathBuf, project: memory::Project, relayed: bool) {
     seeded()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .insert(path.into(), Arc::new(project));
+        .insert(
+            path,
+            Held {
+                project: Arc::new(project),
+                relayed,
+            },
+        );
 }
 
 pub fn open(path: &Path) -> Store {
@@ -48,7 +70,11 @@ pub fn open(path: &Path) -> Store {
         .get(path)
         .cloned();
     match held {
-        Some(project) => Store::Memory(project),
+        Some(Held {
+            project,
+            relayed: true,
+        }) => Store::Relayed(project, path.into()),
+        Some(Held { project, .. }) => Store::Memory(project),
         None => Store::Fs(fs::Project::new(path)),
     }
 }
@@ -59,8 +85,17 @@ macro_rules! each {
         match $self {
             Store::Fs($store) => $call,
             Store::Memory($store) => $call,
+            Store::Relayed($store, _) => $call,
         }
     };
+}
+
+impl Store {
+    fn relay(&self, write: impl FnOnce() -> Write) {
+        if let (Store::Relayed(_, path), Some(sink)) = (self, sink::get()) {
+            sink.write(path, write());
+        }
+    }
 }
 
 impl Project for Store {
@@ -73,15 +108,24 @@ impl Project for Store {
     }
 
     fn create_board(&self, name: &str, key: &str) -> Result<Board> {
-        each!(self, store => store.create_board(name, key))
+        let done = each!(self, store => store.create_board(name, key))?;
+        self.relay(|| Write::CreateBoard {
+            name: name.to_owned(),
+            key: key.to_owned(),
+        });
+        Ok(done)
     }
 
     fn save_board(&self, board: &mut Board) -> Result<()> {
-        each!(self, store => store.save_board(board))
+        let done = each!(self, store => store.save_board(board))?;
+        self.relay(|| Write::SaveBoard(board.clone()));
+        Ok(done)
     }
 
     fn remove_board(&self, id: &str) -> Result<()> {
-        each!(self, store => store.remove_board(id))
+        let done = each!(self, store => store.remove_board(id))?;
+        self.relay(|| Write::RemoveBoard(id.to_owned()));
+        Ok(done)
     }
 
     fn sessions(&self) -> Vec<Record> {
@@ -113,7 +157,9 @@ impl Project for Store {
     }
 
     fn create_article(&self, markdown: &str) -> Result<Article> {
-        each!(self, store => store.create_article(markdown))
+        let done = each!(self, store => store.create_article(markdown))?;
+        self.relay(|| Write::CreateArticle(markdown.to_owned()));
+        Ok(done)
     }
 
     fn read_article(&self, id: &str) -> Result<String> {
@@ -121,7 +167,12 @@ impl Project for Store {
     }
 
     fn write_article(&self, id: &str, markdown: &str) -> Result<()> {
-        each!(self, store => store.write_article(id, markdown))
+        let done = each!(self, store => store.write_article(id, markdown))?;
+        self.relay(|| Write::WriteArticle {
+            id: id.to_owned(),
+            markdown: markdown.to_owned(),
+        });
+        Ok(done)
     }
 
     fn properties(&self, id: &str) -> Properties {
@@ -129,11 +180,18 @@ impl Project for Store {
     }
 
     fn save_properties(&self, id: &str, properties: &Properties) -> Result<()> {
-        each!(self, store => store.save_properties(id, properties))
+        let done = each!(self, store => store.save_properties(id, properties))?;
+        self.relay(|| Write::SaveProperties {
+            id: id.to_owned(),
+            properties: properties.clone(),
+        });
+        Ok(done)
     }
 
     fn remove_article(&self, id: &str) -> Result<()> {
-        each!(self, store => store.remove_article(id))
+        let done = each!(self, store => store.remove_article(id))?;
+        self.relay(|| Write::RemoveArticle(id.to_owned()));
+        Ok(done)
     }
 
     fn asset(&self, id: &str, name: &str) -> Result<Vec<u8>> {
