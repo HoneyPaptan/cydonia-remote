@@ -7,6 +7,7 @@ use crate::{
 use axum::{
     Json, Router,
     body::Body,
+    extract::DefaultBodyLimit,
     extract::{
         Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -27,6 +28,7 @@ use std::{
 use tokio::{net::TcpListener, sync::broadcast::error::RecvError};
 
 const RECEIPTS: usize = 1024;
+const COMMAND_BODY_LIMIT: usize = 64 * 1024 * 1024;
 
 pub type Dispatch = mpsc::UnboundedSender<(Action, oneshot::Sender<Outcome>)>;
 
@@ -88,7 +90,10 @@ pub fn router(config: Config, hub: Arc<Hub>, dispatch: Dispatch) -> Router {
     };
     Router::new()
         .route("/v1/snapshot", get(snapshot))
-        .route("/v1/commands", post(command))
+        .route(
+            "/v1/commands",
+            post(command).layer(DefaultBodyLimit::max(COMMAND_BODY_LIMIT)),
+        )
         .route("/v1/events", get(events))
         .route("/v1/query", post(query))
         .route("/v1/shell", get(shell))

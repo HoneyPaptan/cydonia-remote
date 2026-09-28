@@ -14,6 +14,7 @@ pub mod link;
 pub mod media;
 pub mod migrate;
 pub mod notify;
+pub mod pick;
 pub mod project;
 pub mod relay;
 pub mod session;

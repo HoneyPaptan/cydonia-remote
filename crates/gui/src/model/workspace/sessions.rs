@@ -4,7 +4,8 @@
 //! `use super::*`: these methods work on the same struct and reach the same
 //! names as the rest of it.
 use super::*;
-use crate::model::sink::SessionChange;
+use crate::model::sink::{SessionChange, Sink};
+use std::{path::Path, rc::Rc};
 use artifact::{project::Project as _, session::record::Record};
 
 impl Workspace {
@@ -333,6 +334,9 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         use crate::model::media;
+        if !attachments.is_empty() && self.relay_attached(id, &text, attachments) {
+            return;
+        }
         let Some(ix) = self.project_of(id) else {
             return;
         };
@@ -385,17 +389,35 @@ impl Workspace {
         self.prune_archived(cx);
     }
 
+    fn relay_target(&self, id: u64) -> Option<(Rc<dyn Sink>, &Path, &str)> {
+        let sink = crate::model::sink::get()?;
+        let project = self.project_of(id).map(|ix| &self.projects[ix])?;
+        let record = project.session(id)?.record.as_deref()?;
+        Some((sink, &project.path, record))
+    }
+
     fn relay_session(&self, id: u64, change: SessionChange) -> bool {
-        let Some(sink) = crate::model::sink::get() else {
+        let Some((sink, project, record)) = self.relay_target(id) else {
             return false;
         };
-        let Some(project) = self.project_of(id).map(|ix| &self.projects[ix]) else {
+        sink.session(project, record, change);
+        true
+    }
+
+    fn relay_attached(
+        &self,
+        id: u64,
+        text: &str,
+        attachments: &[crate::model::media::Attachment],
+    ) -> bool {
+        let Some((sink, project, record)) = self.relay_target(id) else {
             return false;
         };
-        let Some(record) = project.session(id).and_then(|chat| chat.record.as_deref()) else {
-            return false;
-        };
-        sink.session(&project.path, record, change);
+        let files = attachments
+            .iter()
+            .filter_map(|attachment| Some((attachment.name(), attachment.bytes()?.into_owned())))
+            .collect();
+        sink.send_attached(project, record, text.to_owned(), files);
         true
     }
 

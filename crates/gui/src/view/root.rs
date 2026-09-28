@@ -625,9 +625,6 @@ impl Cydonia {
                             }
                         });
                     }
-                    ComposerEvent::Terminal => this.show_terminal(window, cx),
-                    ComposerEvent::Changes => this.show_changes(window, cx),
-                    ComposerEvent::Files => this.show_files(window, cx),
                     ComposerEvent::Switch(id, value) => this.switch(id, value, cx),
                 }
             },

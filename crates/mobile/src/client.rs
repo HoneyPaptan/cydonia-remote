@@ -19,7 +19,7 @@ use gui::{
 };
 use remote::{
     mirror::Mirror,
-    proto::{Action, Command, Event, Frame, Outcome, SessionKey, VERSION},
+    proto::{Action, Command, Event, File, Frame, Outcome, SessionKey, Upload, VERSION},
 };
 use std::{
     borrow::Cow,
@@ -136,6 +136,17 @@ impl Sink for Commands {
         self.deliver(Action::SendPrompt {
             key: key(project, record),
             text,
+        });
+    }
+
+    fn send_attached(&self, project: &Path, record: &str, text: String, files: Vec<(String, Vec<u8>)>) {
+        self.deliver(Action::SendAttached {
+            key: key(project, record),
+            text,
+            files: files
+                .into_iter()
+                .map(|(name, bytes)| Upload { name, file: File(bytes) })
+                .collect(),
         });
     }
 
@@ -363,6 +374,7 @@ async fn boot() -> Result<(), String> {
             });
             crate::laptop::install(endpoint.clone());
             crate::hosts::install();
+            crate::pick::install();
             gui::model::sink::install(Rc::new(Commands {
                 endpoint: endpoint.clone(),
                 opening: opening.clone(),

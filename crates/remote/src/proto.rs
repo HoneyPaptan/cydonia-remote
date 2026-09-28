@@ -176,6 +176,11 @@ pub enum Action {
         key: SessionKey,
         text: String,
     },
+    SendAttached {
+        key: SessionKey,
+        text: String,
+        files: Vec<Upload>,
+    },
     Cancel {
         key: SessionKey,
     },
@@ -251,6 +256,12 @@ pub enum Action {
     RemoveAgent {
         id: String,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Upload {
+    pub name: String,
+    pub file: File,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

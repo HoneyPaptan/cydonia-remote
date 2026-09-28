@@ -2,7 +2,9 @@
 //! back out, and scaled for the agent.
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use cydonia_gui::model::media::{LONG_EDGE, attached, encode, line, store};
+use cydonia_gui::model::media::{
+    Attachment, LONG_EDGE, attached, encode, keep_attachment, line, store,
+};
 use std::path::PathBuf;
 
 fn scratch(name: &str) -> PathBuf {
@@ -78,4 +80,51 @@ fn detached_images_round_trip_without_duplication() {
     assert_eq!(detach(remote), (remote.to_owned(), vec![]));
     let plain = "keep  spacing\nunchanged";
     assert_eq!(detach(plain), (plain.to_owned(), vec![]));
+}
+
+#[test]
+fn a_document_is_kept_under_its_own_name_and_linked() {
+    let dir = scratch("document");
+    let upload = Attachment::Upload {
+        name: "Q3 report (final).pdf".into(),
+        bytes: b"%PDF-1.7".to_vec().into(),
+    };
+    let kept = keep_attachment(&dir, &upload).expect("kept");
+    let file = kept.file_name().unwrap().to_string_lossy().into_owned();
+    assert!(file.ends_with("-Q3_report__final_.pdf"), "{file}");
+    assert_eq!(std::fs::read(&kept).unwrap(), b"%PDF-1.7");
+    assert_eq!(
+        line(&kept),
+        format!("[Q3_report__final_.pdf](<{}>)", kept.display())
+    );
+    assert!(attached(&line(&kept)).is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn an_uploaded_picture_goes_to_the_agent() {
+    let dir = scratch("uploaded-picture");
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::RgbImage::new(2, 2)
+        .write_to(&mut png, image::ImageFormat::Png)
+        .unwrap();
+    let upload = Attachment::Upload {
+        name: "photo.png".into(),
+        bytes: png.into_inner().into(),
+    };
+    let kept = keep_attachment(&dir, &upload).expect("kept");
+    assert_eq!(attached(&line(&kept)), vec![kept]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_hidden_or_empty_name_still_gets_a_file() {
+    let dir = scratch("hidden-name");
+    let upload = Attachment::Upload {
+        name: "../..".into(),
+        bytes: b"x".to_vec().into(),
+    };
+    let kept = keep_attachment(&dir, &upload).expect("kept");
+    assert_eq!(kept.parent(), Some(dir.as_path()));
+    let _ = std::fs::remove_dir_all(&dir);
 }

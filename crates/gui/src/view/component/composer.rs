@@ -8,8 +8,8 @@ use super::image_preview::{self, disc};
 use crate::{
     model::{
         media::Attachment,
+        pick,
         session::{Command, Usage},
-        settings::PanelTabs,
     },
     view::root,
 };
@@ -65,6 +65,7 @@ const SUBMENU_ROWS: usize = 12;
 /// The side of a picture waiting in the composer.
 const THUMB: f32 = 64.;
 const THUMB_RADIUS: f32 = 8.;
+const DOCUMENT_WIDTH: f32 = 160.;
 
 /// The side of a thumb's remove button, which sits centred on its corner.
 const REMOVE: f32 = 14.;
@@ -72,10 +73,47 @@ const REMOVE: f32 = 14.;
 /// How much of the window an opened picture may take, either way.
 const PREVIEW_SHARE: f32 = 0.8;
 
-fn picture(attachment: &Attachment) -> gpui::Img {
+fn picture(attachment: &Attachment) -> Option<gpui::Img> {
     match attachment {
-        Attachment::Bytes(image) => img(image.clone()),
-        Attachment::File(path) => img(path.clone()),
+        Attachment::Bytes(image) => Some(img(image.clone())),
+        Attachment::File(path) if attachment.is_picture() => Some(img(path.clone())),
+        _ => None,
+    }
+}
+
+fn document_face(theme: &Theme, ix: usize, name: String) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(("composer-document", ix))
+        .size_full()
+        .rounded(px(THUMB_RADIUS))
+        .bg(theme.surface_raised)
+        .px(px(10.))
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .child(
+            icons::icon(icons::files::FileText)
+                .size(px(18.))
+                .flex_none()
+                .text_color(theme.text_muted),
+        )
+        .child(
+            div()
+                .min_w_0()
+                .text_sm()
+                .text_color(theme.text)
+                .truncate()
+                .child(name),
+        )
+}
+
+fn picked(file: pick::Picked) -> Attachment {
+    match gpui::ImageFormat::from_mime_type(&file.mime) {
+        Some(format) => Attachment::Bytes(Arc::new(gpui::Image::from_bytes(format, file.bytes))),
+        None => Attachment::Upload {
+            name: file.name,
+            bytes: file.bytes.into(),
+        },
     }
 }
 
@@ -88,6 +126,7 @@ fn dimensions(attachment: &Attachment) -> Option<(u32, u32)> {
             .into_dimensions()
             .ok(),
         Attachment::File(path) => image::image_dimensions(path).ok(),
+        Attachment::Upload { .. } => None,
     }
 }
 
@@ -156,18 +195,12 @@ pub struct Switch {
     pub options: Vec<SwitchOption>,
 }
 
-/// What a row of the tools menu sends when it is chosen.
-type Emit = fn() -> ComposerEvent;
-
 pub enum ComposerEvent {
     Draft(u64, String),
     /// The message, and the pictures going with it.
     Submit(String, Vec<Attachment>),
     Cancel,
     Reconnect,
-    Terminal,
-    Changes,
-    Files,
     /// Set a switch to one of its values, by id.
     Switch(SwitchId, SharedString),
 }
@@ -232,10 +265,6 @@ pub struct Composer {
     scroll: ScrollHandle,
     /// Whether a turn is in flight — what the button does when pressed.
     streaming: bool,
-    /// Whether the session tools are on offer. Off beside a space: all three
-    /// of them open the window's own panels, which a space divides the room
-    /// for — see [`crate::view::arrangement`].
-    tools: bool,
     activity: Option<Activity>,
     activity_open: bool,
     activity_frame: std::rc::Rc<std::cell::RefCell<bezel::agent::orbs::engine::Frame>>,
@@ -253,8 +282,6 @@ pub struct Composer {
     menu_pressed: bool,
     tools_menu: bool,
     tools_cursor: Cursor,
-    /// Which of the right panel's tabs the tools menu offers.
-    panel_tabs: PanelTabs,
     /// Where that menu is being worked: which of its rows is live, and which
     /// of them has its own panel down. One cursor for both devices, so a
     /// submenu can only ever hang off the row the pointer is on.
@@ -314,7 +341,6 @@ impl Composer {
             commands: Vec::new(),
             scroll: ScrollHandle::new(),
             streaming: false,
-            tools: true,
             activity: None,
             activity_open: false,
             activity_frame: Default::default(),
@@ -327,7 +353,6 @@ impl Composer {
             menu_pressed: false,
             tools_menu: false,
             tools_cursor: Cursor::default(),
-            panel_tabs: PanelTabs::default(),
             cursor: Cursor::default(),
             picking: None,
             picking_cursor: Cursor::default(),
@@ -410,17 +435,39 @@ impl Composer {
         cx.notify();
     }
 
-    pub fn set_panel_tabs(&mut self, tabs: PanelTabs, cx: &mut Context<Self>) {
-        if self.panel_tabs != tabs {
-            self.panel_tabs = tabs;
-            cx.notify();
-        }
-    }
-
-    pub fn set_tools(&mut self, tools: bool, cx: &mut Context<Self>) {
-        if self.tools != tools {
-            self.tools = tools;
-            cx.notify();
+    fn pick_attachments(&mut self, kind: pick::Kind, cx: &mut Context<Self>) {
+        match pick::get() {
+            Some(picker) => {
+                let chosen = picker.pick(kind);
+                cx.spawn(async move |this, cx| {
+                    let Ok(files) = chosen.await else {
+                        return;
+                    };
+                    let _ = this.update(cx, |composer, cx| {
+                        composer.attachments.extend(files.into_iter().map(picked));
+                        cx.notify();
+                    });
+                })
+                .detach();
+            }
+            None => {
+                let chosen = cx.prompt_for_paths(gpui::PathPromptOptions {
+                    files: true,
+                    directories: false,
+                    multiple: true,
+                    prompt: None,
+                });
+                cx.spawn(async move |this, cx| {
+                    let Ok(Ok(Some(paths))) = chosen.await else {
+                        return;
+                    };
+                    let _ = this.update(cx, |composer, cx| {
+                        composer.attachments.extend(paths.into_iter().map(Attachment::File));
+                        cx.notify();
+                    });
+                })
+                .detach();
+            }
         }
     }
 
@@ -509,7 +556,6 @@ impl Composer {
             paths
                 .paths()
                 .iter()
-                .filter(|path| markdown::is_image(&path.to_string_lossy()))
                 .cloned()
                 .map(Attachment::File),
         );
@@ -586,29 +632,37 @@ impl Composer {
             return None;
         }
         let thumbs = self.attachments.iter().enumerate().map(|(ix, attachment)| {
+            let shown = picture(attachment);
+            let width = match shown {
+                Some(_) => THUMB,
+                None => DOCUMENT_WIDTH,
+            };
+            let face = match shown {
+                Some(picture) => div()
+                    .id(("composer-attachment", ix))
+                    .size_full()
+                    .rounded(px(THUMB_RADIUS))
+                    .overflow_hidden()
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |composer, _, _, cx| {
+                        composer.preview = Some(ix);
+                        cx.notify();
+                    }))
+                    .child(
+                        picture
+                            .size_full()
+                            .rounded(px(THUMB_RADIUS))
+                            .object_fit(ObjectFit::Cover),
+                    ),
+                None => document_face(theme, ix, attachment.name()),
+            };
             // Unclipped, so the remove button can sit on the corner: half on
             // the picture, half off it.
             div()
                 .relative()
-                .size(px(THUMB))
-                .child(
-                    div()
-                        .id(("composer-attachment", ix))
-                        .size_full()
-                        .rounded(px(THUMB_RADIUS))
-                        .overflow_hidden()
-                        .cursor_pointer()
-                        .on_click(cx.listener(move |composer, _, _, cx| {
-                            composer.preview = Some(ix);
-                            cx.notify();
-                        }))
-                        .child(
-                            picture(attachment)
-                                .size_full()
-                                .rounded(px(THUMB_RADIUS))
-                                .object_fit(ObjectFit::Cover),
-                        ),
-                )
+                .w(px(width))
+                .h(px(THUMB))
+                .child(face)
                 // Paint the border above the image on the glass surface.
                 .child(surface::layered(
                     div()
@@ -627,7 +681,7 @@ impl Composer {
                         .absolute()
                         .top(px(-REMOVE / 2.))
                         .right(px(-REMOVE / 2.))
-                        .tooltip(|window, cx| Tooltip::text("Remove image", window, cx))
+                        .tooltip(|window, cx| Tooltip::text("Remove attachment", window, cx))
                         .on_click(cx.listener(move |composer, _, _, cx| {
                             if ix < composer.attachments.len() {
                                 composer.attachments.remove(ix);
@@ -1237,7 +1291,7 @@ impl Composer {
             .justify_center()
             .cursor_pointer()
             .hover(|s| s.bg(theme.element_hover))
-            .tooltip(|window, cx| Tooltip::text("Session tools", window, cx))
+            .tooltip(|window, cx| Tooltip::text("Attach", window, cx))
             .on_click(cx.listener(|this, _, _, cx| {
                 this.tools_menu = !this.tools_menu;
                 this.close_menu();
@@ -1250,33 +1304,17 @@ impl Composer {
                     .text_color(theme.text_muted),
             )
             .surface(theme, SURFACE);
-        let tabs = self.panel_tabs;
-        let (items, events): (Vec<Item>, Vec<Emit>) = [
-            Some((
-                Item::action("Terminal")
-                    .with_icon(icons::development::Terminal)
-                    .with_shortcut(&root::ToggleTerminal, window),
-                (|| ComposerEvent::Terminal) as Emit,
-            )),
-            tabs.review.then(|| {
-                (
-                    Item::action("Review")
-                        .with_icon(icons::development::GitCompare)
-                        .with_shortcut(&root::OpenReview, window),
-                    (|| ComposerEvent::Changes) as Emit,
-                )
-            }),
-            tabs.files.then(|| {
-                (
-                    Item::action("Files")
-                        .with_icon(icons::files::Folder)
-                        .with_shortcut(&root::OpenFiles, window),
-                    (|| ComposerEvent::Files) as Emit,
-                )
-            }),
+        let (items, kinds): (Vec<Item>, Vec<pick::Kind>) = [
+            (
+                Item::action("Add photos").with_icon(icons::files::ImagePlus),
+                pick::Kind::Photos,
+            ),
+            (
+                Item::action("Add files").with_icon(icons::files::Paperclip),
+                pick::Kind::Files,
+            ),
         ]
         .into_iter()
-        .flatten()
         .unzip();
         let rows = items.clone();
         let popup = self.tools_menu.then(|| {
@@ -1295,9 +1333,9 @@ impl Composer {
                         Hit::Choose(path) => {
                             this.tools_menu = false;
                             if let [ix] = path.as_slice()
-                                && let Some(event) = events.get(*ix)
+                                && let Some(kind) = kinds.get(*ix)
                             {
-                                cx.emit(event());
+                                this.pick_attachments(*kind, cx);
                             }
                         }
                         // A menu backed out of leaves the caret where it took
@@ -1402,7 +1440,7 @@ impl Composer {
                             )
                             .children(picker),
                     )
-                    .children(self.tools.then(|| self.tools(&theme, window, cx))),
+                    .child(self.tools(&theme, window, cx)),
             )
             .children(self.lightbox(window, cx))
     }
@@ -1433,7 +1471,7 @@ impl Composer {
         let card = image_preview::frame(
             &theme,
             "composer-preview-close",
-            picture(attachment)
+            picture(attachment)?
                 .w(width)
                 .h(height)
                 .object_fit(ObjectFit::Contain)

@@ -1,4 +1,5 @@
 use crate::model::{
+    media::Attachment,
     project::Project,
     session::ChatSession,
     store::{self, Store},
@@ -132,6 +133,20 @@ pub fn route(workspace: &mut Workspace, action: Action, cx: &mut Context<Workspa
                 return rejected(Reason::UnknownSession);
             };
             workspace.send(id, text, cx);
+            Outcome::Accepted
+        }
+        Action::SendAttached { key, text, files } => {
+            let Some(id) = find(&workspace.projects, &key) else {
+                return rejected(Reason::UnknownSession);
+            };
+            let attachments: Vec<_> = files
+                .into_iter()
+                .map(|upload| Attachment::Upload {
+                    name: upload.name,
+                    bytes: upload.file.0.into(),
+                })
+                .collect();
+            workspace.send_attached(id, text, &attachments, cx);
             Outcome::Accepted
         }
         Action::Cancel { key } => {

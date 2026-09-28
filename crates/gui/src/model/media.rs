@@ -41,6 +41,35 @@ pub const LONG_EDGE: u32 = 1568;
 pub enum Attachment {
     Bytes(Arc<Image>),
     File(PathBuf),
+    Upload { name: String, bytes: Arc<[u8]> },
+}
+
+impl Attachment {
+    pub fn name(&self) -> String {
+        match self {
+            Attachment::Bytes(image) => format!("image.{}", image.format.extension()),
+            Attachment::File(path) => path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            Attachment::Upload { name, .. } => name.clone(),
+        }
+    }
+
+    pub fn is_picture(&self) -> bool {
+        match self {
+            Attachment::Bytes(_) => true,
+            _ => markdown::is_image(&self.name()),
+        }
+    }
+
+    pub fn bytes(&self) -> Option<Cow<'_, [u8]>> {
+        match self {
+            Attachment::Bytes(image) => Some(Cow::Borrowed(&image.bytes)),
+            Attachment::File(path) => std::fs::read(path).ok().map(Cow::Owned),
+            Attachment::Upload { bytes, .. } => Some(Cow::Borrowed(bytes)),
+        }
+    }
 }
 
 /// Install the store. Called once, beside the other `init`s.
@@ -61,7 +90,11 @@ pub fn init(cx: &mut App) {
 /// picture kept twice is the one file — and gpui, which caches a decoded
 /// picture against its path, is handed the copy it already has.
 pub fn store(dir: &Path, bytes: &[u8], extension: &str) -> Option<PathBuf> {
-    let file = dir.join(format!("{MARK}{:x}.{extension}", hash(&bytes)));
+    write_once(dir, format!("{MARK}{:x}.{extension}", hash(&bytes)), bytes)
+}
+
+fn write_once(dir: &Path, name: String, bytes: &[u8]) -> Option<PathBuf> {
+    let file = dir.join(name);
     if !file.is_file() {
         std::fs::create_dir_all(dir).ok()?;
         std::fs::write(&file, bytes).ok()?;
@@ -73,16 +106,49 @@ pub fn store(dir: &Path, bytes: &[u8], extension: &str) -> Option<PathBuf> {
 /// where it is: a transcript that outlives the download it was sent from is
 /// the reason the picture lives with the project.
 pub fn keep_attachment(dir: &Path, attachment: &Attachment) -> Option<PathBuf> {
-    match attachment {
-        Attachment::Bytes(image) => store(dir, &image.bytes, image.format.extension()),
-        Attachment::File(path) => store(dir, &std::fs::read(path).ok()?, &extension(path)?),
+    let bytes = attachment.bytes()?;
+    let name = attachment.name();
+    match attachment.is_picture() {
+        true => store(dir, &bytes, &extension(Path::new(&name))?),
+        false => store_document(dir, &bytes, &name),
     }
+}
+
+fn store_document(dir: &Path, bytes: &[u8], name: &str) -> Option<PathBuf> {
+    let plain: String = name
+        .chars()
+        .map(|c| match c.is_alphanumeric() || matches!(c, '.' | '-' | '_') {
+            true => c,
+            false => '_',
+        })
+        .collect();
+    let plain = plain.trim_start_matches('.');
+    let plain = match plain.is_empty() {
+        true => "file",
+        false => plain,
+    };
+    write_once(dir, format!("{MARK}{:x}-{plain}", hash(&bytes)), bytes)
 }
 
 /// A picture as a message line. The destination is bracketed, since a
 /// project path is free to have a space in it.
 pub fn line(path: &Path) -> String {
-    format!("![](<{}>)", path.display())
+    match markdown::is_image(&path.to_string_lossy()) {
+        true => format!("![](<{}>)", path.display()),
+        false => format!("[{}](<{}>)", document_title(path), path.display()),
+    }
+}
+
+fn document_title(path: &Path) -> String {
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let shown = name
+        .strip_prefix(MARK)
+        .and_then(|rest| rest.split_once('-'))
+        .map_or(name.as_str(), |(_, original)| original);
+    shown.replace(['[', ']'], "")
 }
 
 /// The local pictures a message points at, in order.

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -15,6 +16,8 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -32,6 +35,7 @@ class MainActivity : Activity() {
   private var web: WebView? = null
   private var pages: Pages? = null
   private val watchdog = Handler(Looper.getMainLooper())
+  private var chooser: ValueCallback<Array<Uri>>? = null
   private val backCallback by lazy { OnBackInvokedCallback { goBack() } }
   private val networkCallback = object : ConnectivityManager.NetworkCallback() {
     override fun onAvailable(network: Network) {
@@ -74,6 +78,33 @@ class MainActivity : Activity() {
 
   private fun nudge() {
     web?.evaluateJavascript("window.dispatchEvent(new Event('cydonia-resume'))", null)
+  }
+
+  @Deprecated("Deprecated in Java")
+  override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    super.onActivityResult(requestCode, resultCode, data)
+    if (requestCode != PICK_FILES) return
+    chooser?.onReceiveValue(if (resultCode == RESULT_OK) chosen(data) else null)
+    chooser = null
+  }
+
+  private fun chosen(data: Intent?): Array<Uri>? {
+    val clip = data?.clipData
+    if (clip != null) return Array(clip.itemCount) { clip.getItemAt(it).uri }
+    return data?.data?.let { arrayOf(it) }
+  }
+
+  private fun choose(callback: ValueCallback<Array<Uri>>, params: WebChromeClient.FileChooserParams): Boolean {
+    chooser?.onReceiveValue(null)
+    chooser = callback
+    val intent = params.createIntent().apply {
+      if (params.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
+        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+      }
+    }
+    return runCatching { startActivityForResult(intent, PICK_FILES) }
+      .onFailure { chooser = null }
+      .isSuccess
   }
 
   @Deprecated("Deprecated in Java")
@@ -184,6 +215,13 @@ class MainActivity : Activity() {
       settings.domStorageEnabled = true
       settings.allowFileAccess = false
       settings.allowContentAccess = false
+      webChromeClient = object : WebChromeClient() {
+        override fun onShowFileChooser(
+          view: WebView,
+          callback: ValueCallback<Array<Uri>>,
+          params: FileChooserParams,
+        ): Boolean = choose(callback, params)
+      }
       webViewClient = object : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
           if (request.url.host == connection.host) return false
@@ -223,5 +261,6 @@ class MainActivity : Activity() {
 
   companion object {
     private const val LOAD_TIMEOUT = 8000L
+    private const val PICK_FILES = 7
   }
 }

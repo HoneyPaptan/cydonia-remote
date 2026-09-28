@@ -13,6 +13,7 @@ struct Recorder(RefCell<Vec<String>>);
 
 impl Sink for Recorder {
     fn send_prompt(&self, _: &Path, _: &str, _: String) {}
+    fn send_attached(&self, _: &Path, _: &str, _: String, _: Vec<(String, Vec<u8>)>) {}
     fn cancel(&self, _: &Path, _: &str) {}
     fn respond_permission(&self, _: &Path, _: &str, _: u64, _: String) {}
     fn set_mode(&self, _: &Path, _: &str, _: String) {}

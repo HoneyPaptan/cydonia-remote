@@ -20,6 +20,7 @@ pub enum SessionChange {
 
 pub trait Sink {
     fn send_prompt(&self, project: &Path, record: &str, text: String);
+    fn send_attached(&self, project: &Path, record: &str, text: String, files: Vec<(String, Vec<u8>)>);
     fn cancel(&self, project: &Path, record: &str);
     fn respond_permission(&self, project: &Path, record: &str, request: u64, option: String);
     fn set_mode(&self, project: &Path, record: &str, mode: String);

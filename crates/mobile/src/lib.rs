@@ -12,3 +12,5 @@ mod laptop;
 mod fonts;
 #[cfg(target_family = "wasm")]
 mod hosts;
+#[cfg(target_family = "wasm")]
+mod pick;
