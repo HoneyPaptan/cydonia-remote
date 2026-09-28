@@ -70,7 +70,9 @@
 			if (matchMedia('(pointer: coarse)').matches) scaleTheInterface(1.25);
 		</script>
 		<script type="module">
-			import init from './cydonia_mobile.js';
+			import init, { cydoniaBack } from './cydonia_mobile.js';
+
+			window.cydoniaBack = cydoniaBack;
 
 			init().catch((error) => {
 				const boot = document.getElementById('boot');

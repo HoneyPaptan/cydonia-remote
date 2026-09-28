@@ -3,7 +3,7 @@ use crate::{
     net::{self, Endpoint, Inbound},
     seed,
 };
-use bezel::gpui::{App, Application, ApplicationHandle, AsyncApp, Entity};
+use bezel::gpui::{App, Application, ApplicationHandle, AsyncApp, Entity, WindowHandle};
 use futures::{
     FutureExt as _, StreamExt as _,
     channel::mpsc::{self, UnboundedReceiver},
@@ -15,7 +15,7 @@ use gui::{
         sink::{Sink, Write},
         workspace::{NoBackdropBlur, Workspace},
     },
-    view::root,
+    view::root::{self, Cydonia},
 };
 use remote::{
     mirror::Mirror,
@@ -44,6 +44,7 @@ const ATTEMPTS: usize = 6;
 
 thread_local! {
     static APPLICATION: RefCell<Option<ApplicationHandle>> = const { RefCell::new(None) };
+    static WINDOW: RefCell<Option<WindowHandle<Cydonia>>> = const { RefCell::new(None) };
 }
 
 fn show(text: &str) {
@@ -331,6 +332,7 @@ async fn boot() -> Result<(), String> {
             cx.set_global(bezel::ui::tooltip::Hidden);
             boot::init(&settings, cx);
             let window = root::open(settings, state, cx).expect("failed to open the window");
+            WINDOW.with(|held| *held.borrow_mut() = Some(window));
             let workspace = window
                 .read_with(cx, |root, _| root.workspace())
                 .expect("the window holds a workspace");
@@ -361,6 +363,22 @@ async fn boot() -> Result<(), String> {
         });
     APPLICATION.with(|application| *application.borrow_mut() = Some(handle));
     Ok(())
+}
+
+#[wasm_bindgen(js_name = cydoniaBack)]
+pub fn back() -> bool {
+    let Some(window) = WINDOW.with(|held| *held.borrow()) else {
+        return false;
+    };
+    APPLICATION.with(|application| {
+        application.borrow().as_ref().is_some_and(|application| {
+            application.update(|cx| {
+                window
+                    .update(cx, |root, window, cx| root.back(window, cx))
+                    .unwrap_or(false)
+            })
+        })
+    })
 }
 
 #[wasm_bindgen(start)]

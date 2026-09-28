@@ -3,6 +3,7 @@ package sh.cydonia.remote
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -22,14 +23,23 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 
 class MainActivity : Activity() {
   private var web: WebView? = null
   private var pages: Pages? = null
   private val watchdog = Handler(Looper.getMainLooper())
+  private val backCallback by lazy { OnBackInvokedCallback { goBack() } }
 
   override fun onCreate(state: Bundle?) {
     super.onCreate(state)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      onBackInvokedDispatcher.registerOnBackInvokedCallback(
+        OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+        backCallback,
+      )
+    }
     val offered = Connection.from(intent?.data)
     if (offered != null) askFor(offered) else open(Connection.load(this))
   }
@@ -46,8 +56,15 @@ class MainActivity : Activity() {
 
   @Deprecated("Deprecated in Java")
   override fun onBackPressed() {
+    goBack()
+  }
+
+  private fun goBack() {
     if (pages?.back() == true) return
-    if (web != null) moveTaskToBack(true) else super.onBackPressed()
+    val view = web ?: return finish()
+    view.evaluateJavascript("window.cydoniaBack ? window.cydoniaBack() : false") { taken ->
+      if (taken != "true") moveTaskToBack(true)
+    }
   }
 
   private fun open(connection: Connection) {

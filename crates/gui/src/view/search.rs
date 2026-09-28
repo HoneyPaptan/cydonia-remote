@@ -104,7 +104,7 @@ struct Applied {
 pub(crate) struct Search {
     applied: Option<Applied>,
     applied_task: Option<Task<()>>,
-    open: bool,
+    pub(crate) open: bool,
     field: Entity<TextField>,
     /// What the last finished listing found. Kept on screen while the next
     /// one runs, so typing does not empty the palette between keystrokes.
@@ -263,7 +263,7 @@ impl Cydonia {
         cx.notify();
     }
 
-    fn dismiss_search(&mut self, _: &DismissSearch, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn dismiss_search(&mut self, _: &DismissSearch, window: &mut Window, cx: &mut Context<Self>) {
         self.search.open = false;
         self.search.task = None;
         window.focus(&self.leaf().focus, cx);

@@ -3,6 +3,7 @@
 //! them owns app state.
 
 pub mod arrangement;
+pub mod back;
 pub mod article;
 pub mod board;
 pub mod chrome;

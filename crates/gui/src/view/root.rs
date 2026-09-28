@@ -494,7 +494,7 @@ pub struct Cydonia {
     settings_window: Option<WindowHandle<SettingsWindow>>,
     /// Settings drawn over the window, while they are up.
     #[cfg(not(feature = "desktop"))]
-    settings_sheet: Option<Entity<SettingsWindow>>,
+    pub(crate) settings_sheet: Option<Entity<SettingsWindow>>,
     /// The delete waiting to be agreed to, and the name to ask about. Held
     /// with its label rather than looked up when the dialog draws: what is
     /// being asked about must not change wording under the question.

@@ -337,6 +337,16 @@ impl Panel {
         }
     }
 
+    /// Put away the file tree where it covers the panel, and whether it did.
+    pub(crate) fn close_files(&mut self, cx: &mut Context<Self>) -> bool {
+        if !(self.alone && self.files_open) {
+            return false;
+        }
+        self.files_open = false;
+        cx.notify();
+        true
+    }
+
     fn open_file(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         self.focus_pending = true;
         let path = path.canonicalize().unwrap_or(path);
