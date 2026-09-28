@@ -40,7 +40,7 @@ syntax = { version = "0.2.2", package = "bezel-syntax", features = ["wasm"] }
 prompts = { version = "0.1.16", path = "crates/prompts", package = "cydonia-prompts" }
 remote = { version = "0.1.19", path = "crates/remote", package = "cydonia-remote" }
 terminal = { version = "0.2.2", package = "bezel-terminal" }
-tokio = { version = "1", features = ["net", "process", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", features = ["fs", "net", "process", "rt-multi-thread", "sync", "time"] }
 toml = "0.8"
 toml_edit = "0.22"
 ureq = "3"
