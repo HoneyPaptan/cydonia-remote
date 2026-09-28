@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.text.InputType
+import android.text.method.PasswordTransformationMethod
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -26,16 +27,13 @@ class MainActivity : Activity() {
 
   override fun onCreate(state: Bundle?) {
     super.onCreate(state)
-    Connection.from(intent?.data)?.save(this)
-    open(Connection.load(this))
+    val offered = Connection.from(intent?.data)
+    if (offered != null) askFor(offered) else open(Connection.load(this))
   }
 
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
-    Connection.from(intent.data)?.let {
-      it.save(this)
-      open(it)
-    }
+    Connection.from(intent.data)?.let { askFor(it) }
   }
 
   @Deprecated("Deprecated in Java")
@@ -44,7 +42,11 @@ class MainActivity : Activity() {
   }
 
   private fun open(connection: Connection) {
-    if (connection.complete) reach(connection) else askFor(connection)
+    when {
+      !connection.complete -> askFor(connection)
+      !connection.private -> askFor(connection, getString(R.string.not_private, connection.host))
+      else -> reach(connection)
+    }
   }
 
   private fun column(): LinearLayout =
@@ -75,7 +77,7 @@ class MainActivity : Activity() {
     setContentView(view)
   }
 
-  private fun askFor(connection: Connection) {
+  private fun askFor(connection: Connection, problem: String? = null) {
     val address = EditText(this).apply {
       hint = getString(R.string.address_hint)
       setText(connection.address)
@@ -87,9 +89,11 @@ class MainActivity : Activity() {
       setText(connection.token)
       inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
       isSingleLine = true
+      transformationMethod = PasswordTransformationMethod.getInstance()
     }
     show(column().apply {
       addView(label(getString(R.string.connect_title)))
+      problem?.let { addView(label(it)) }
       addView(address, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
       addView(token, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
       addView(button(getString(R.string.connect)) {
@@ -133,7 +137,15 @@ class MainActivity : Activity() {
       setBackgroundColor(Color.BLACK)
       settings.javaScriptEnabled = true
       settings.domStorageEnabled = true
+      settings.allowFileAccess = false
+      settings.allowContentAccess = false
       webViewClient = object : WebViewClient() {
+        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+          if (request.url.host == connection.host) return false
+          runCatching { startActivity(Intent(Intent.ACTION_VIEW, request.url)) }
+          return true
+        }
+
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
           if (request.isForMainFrame) offline(connection)
         }
