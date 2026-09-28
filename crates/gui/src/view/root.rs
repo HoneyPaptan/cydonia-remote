@@ -102,6 +102,7 @@ const SIDEBAR_WIDTH: f32 = 200.;
 const SIDEBAR_WIDTH_MIN: f32 = 180.;
 const SIDEBAR_WIDTH_MAX: f32 = 420.;
 const NARROW_WIDTH: f32 = 640.;
+const DRAWER_SHARE: f32 = 0.8;
 
 pub(crate) type Front = (
     usize,
@@ -109,7 +110,6 @@ pub(crate) type Front = (
     Option<Member>,
     Option<(std::path::PathBuf, String)>,
 );
-const DRAWER_GAP: f32 = 56.;
 
 pub(crate) fn narrow(window: &Window) -> bool {
     f32::from(window.viewport_size().width) < NARROW_WIDTH
@@ -1004,7 +1004,7 @@ impl Cydonia {
                 Ribbon::new(cx),
             )],
             focused: 0,
-            sidebar_open: true,
+            sidebar_open: !narrow(window),
             sidebar_width: SIDEBAR_WIDTH,
             drawer_front: None,
             #[cfg(feature = "desktop")]
@@ -1377,11 +1377,15 @@ impl Cydonia {
         }
     }
 
+    pub(crate) fn sidebar_extent(&self, window: &Window) -> f32 {
+        match narrow(window) {
+            true => f32::from(window.viewport_size().width) * DRAWER_SHARE,
+            false => self.sidebar_width,
+        }
+    }
+
     fn drawer(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let theme = Theme::of(cx).clone();
-        let width = self
-            .sidebar_width
-            .min(f32::from(window.viewport_size().width) - DRAWER_GAP);
         div()
             .id("sidebar-drawer")
             .absolute()
@@ -1395,7 +1399,7 @@ impl Cydonia {
                     .top_0()
                     .left_0()
                     .h_full()
-                    .w(px(width))
+                    .bg(theme.bg)
                     .overflow_hidden()
                     .on_mouse_down(
                         bezel::gpui::MouseButton::Left,

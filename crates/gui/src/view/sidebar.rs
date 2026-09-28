@@ -447,7 +447,7 @@ impl Cydonia {
         let count = rows.len();
         div()
             .flex_none()
-            .w(px(self.sidebar_width))
+            .w(px(self.sidebar_extent(window)))
             .h_full()
             .bg(root::sidebar_bg(&theme))
             .flex()
