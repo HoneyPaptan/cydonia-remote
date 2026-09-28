@@ -156,14 +156,15 @@ impl Cydonia {
         let toolbar = self.showing(cx).and_then(|pane| self.toolbar(pane, cx));
         // The lights belong to the window, not a pane, so their clearance is
         // taken here and nowhere a pane can see it.
-        let inset = match self.sidebar_open || window.is_fullscreen() {
+        let docked = self.sidebar_docked(window);
+        let inset = match docked || window.is_fullscreen() {
             true => root::HEADER_INSET,
             false => root::TOOLBAR_INSET,
         };
         // The window's corners, when this band is the one at them: the
         // sidebar holds the left one while it is open, and the right panel
         // the right one.
-        let left = !self.sidebar_open && chrome::has(CaptionSide::Left, window, cx);
+        let left = !docked && chrome::has(CaptionSide::Left, window, cx);
         let right = self.changes.is_none() && chrome::has(CaptionSide::Right, window, cx);
         let bare = toolbar.is_none();
         let renaming = self.header_renaming(cx).is_some();
@@ -193,12 +194,8 @@ impl Cydonia {
             // Above the pane, which runs under it.
             // The fold belongs to whichever column runs along the window's
             // left edge, so with the sidebar gone it is this one's.
-            .children((!self.sidebar_open).then(|| self.fold_toggle(cx).into_any_element()))
-            .children(
-                (!self.sidebar_open)
-                    .then(|| self.app_menu(window, cx))
-                    .flatten(),
-            )
+            .children((!docked).then(|| self.fold_toggle(cx).into_any_element()))
+            .children((!docked).then(|| self.app_menu(window, cx)).flatten())
             .children(toolbar.map(|toolbar| {
                 match renaming {
                     true => div().flex_1().min_w_0().child(self.name_field(cx)),

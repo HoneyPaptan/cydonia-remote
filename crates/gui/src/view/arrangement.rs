@@ -506,10 +506,10 @@ impl Cydonia {
         // The lights are the window's and are drawn over whatever is at its
         // top left, so their clearance is taken by the pane that lands there
         // and nowhere another pane can see it. Fullscreen has none.
-        let fold = first && !self.sidebar_open;
+        let fold = first && !self.sidebar_docked(window);
         let left = fold && chrome::has(CaptionSide::Left, window, cx);
         let right = last && chrome::has(CaptionSide::Right, window, cx);
-        let lead = match (first, self.sidebar_open || window.is_fullscreen()) {
+        let lead = match (first, self.sidebar_docked(window) || window.is_fullscreen()) {
             _ if left => 0.,
             (true, true) => crate::view::root::HEADER_INSET,
             (true, false) => crate::view::root::TOOLBAR_INSET,

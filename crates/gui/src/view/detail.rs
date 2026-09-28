@@ -773,7 +773,7 @@ impl Cydonia {
         let terminal: Option<gpui::AnyView> = None;
         let changes = self.changes.clone();
         let available = f32::from(window.viewport_size().width)
-            - if self.sidebar_open {
+            - if self.sidebar_docked(window) {
                 self.sidebar_width
             } else {
                 0.
@@ -843,7 +843,7 @@ impl Cydonia {
                         changes
                             .clone()
                             .filter(|_| !beside)
-                            .map(|panel| div().absolute().inset_0().child(panel)),
+                            .map(|panel| div().absolute().inset_0().bg(theme.bg).child(panel)),
                     )
                     // No split to drag when there is nothing beside anything.
                     .when(changes.is_some() && beside, |row| {
@@ -1142,7 +1142,7 @@ impl Cydonia {
         }
         let id = chat.id;
         let available = (f32::from(window.viewport_size().width)
-            - if self.sidebar_open {
+            - if self.sidebar_docked(window) {
                 self.sidebar_width
             } else {
                 0.

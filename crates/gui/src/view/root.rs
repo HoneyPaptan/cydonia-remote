@@ -101,6 +101,19 @@ const RENAME_CONTEXT: &str = "CydoniaSessionName";
 const SIDEBAR_WIDTH: f32 = 200.;
 const SIDEBAR_WIDTH_MIN: f32 = 180.;
 const SIDEBAR_WIDTH_MAX: f32 = 420.;
+const NARROW_WIDTH: f32 = 640.;
+
+pub(crate) type Front = (
+    usize,
+    super::leaf::Pane,
+    Option<Member>,
+    Option<(std::path::PathBuf, String)>,
+);
+const DRAWER_GAP: f32 = 56.;
+
+pub(crate) fn narrow(window: &Window) -> bool {
+    f32::from(window.viewport_size().width) < NARROW_WIDTH
+}
 
 /// The sidebar's gutter: a row's outer margin, and the padding inside it.
 pub(crate) const SIDEBAR_GUTTER: f32 = 8.;
@@ -419,6 +432,7 @@ pub struct Cydonia {
     pub(crate) focused: usize,
     pub(crate) sidebar_open: bool,
     pub(crate) sidebar_width: f32,
+    pub(crate) drawer_front: Option<Front>,
     /// The window's bottom panel: its shell, and whether it is up.
     ///
     /// One to a window, like the sidebar and the right panel — every pane and
@@ -992,6 +1006,7 @@ impl Cydonia {
             focused: 0,
             sidebar_open: true,
             sidebar_width: SIDEBAR_WIDTH,
+            drawer_front: None,
             #[cfg(feature = "desktop")]
             terminal: None,
             changes_open: false,
@@ -1334,6 +1349,67 @@ impl Cydonia {
         self.open_settings(Section::General, cx);
     }
 
+    pub(crate) fn sidebar_docked(&self, window: &Window) -> bool {
+        self.sidebar_open && !narrow(window)
+    }
+
+    fn front(&self, cx: &App) -> Front {
+        let landed = self
+            .workspace
+            .read(cx)
+            .landed()
+            .map(|(project, entry)| (project.to_path_buf(), entry.id.clone()));
+        let leaf = self.leaf();
+        (self.focused, leaf.pane, leaf.entry.clone(), landed)
+    }
+
+    pub(crate) fn remember_drawer_front(&mut self, cx: &App) {
+        self.drawer_front = Some(self.front(cx));
+    }
+
+    pub(crate) fn close_drawer_on_arrival(&mut self, cx: &mut Context<Self>) {
+        let Some(seen) = self.drawer_front.take() else {
+            return;
+        };
+        if seen != self.front(cx) {
+            self.sidebar_open = false;
+            cx.notify();
+        }
+    }
+
+    fn drawer(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let theme = Theme::of(cx).clone();
+        let width = self
+            .sidebar_width
+            .min(f32::from(window.viewport_size().width) - DRAWER_GAP);
+        div()
+            .id("sidebar-drawer")
+            .absolute()
+            .inset_0()
+            .bg(theme.scrim())
+            .on_click(cx.listener(|this, _, _, cx| this.toggle_sidebar(cx)))
+            .child(
+                div()
+                    .id("sidebar-drawer-sheet")
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .h_full()
+                    .w(px(width))
+                    .overflow_hidden()
+                    .on_click(|_, _, cx| cx.stop_propagation())
+                    .on_mouse_down(
+                        bezel::gpui::MouseButton::Left,
+                        cx.listener(|this, _, _, cx| this.remember_drawer_front(cx)),
+                    )
+                    .on_mouse_up(
+                        bezel::gpui::MouseButton::Left,
+                        cx.listener(|this, _, _, cx| this.close_drawer_on_arrival(cx)),
+                    )
+                    .child(self.sidebar(window, cx)),
+            )
+    }
+
     pub(crate) fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
         self.sidebar_open = !self.sidebar_open;
         cx.notify();
@@ -1559,6 +1635,8 @@ impl Render for Cydonia {
         self.sync_leaves(window, cx);
         self.sync_changes(cx);
         self.publish_shown(cx);
+        let docked = self.sidebar_docked(window);
+        let drawn = self.sidebar_open && !docked;
         let theme = Theme::of(cx).clone();
         let root = div()
             .key_context("Cydonia")
@@ -1615,13 +1693,11 @@ impl Render for Cydonia {
             // element's ancestors. Sized at nothing, so the pane that does hold
             // a field keeps its focus through a click anywhere else.
             .child(div().track_focus(&self.focus))
-            .when(self.sidebar_open, |root| {
-                root.child(self.sidebar(window, cx))
-            })
+            .when(docked, |root| root.child(self.sidebar(window, cx)))
             .child(self.detail(window, cx))
             // Rides on the seam between the sidebar and the detail column
             // rather than sitting in flow, so neither gives up a column.
-            .when(self.sidebar_open, |root| {
+            .when(docked, |root| {
                 root.child(
                     crate::view::component::divider::divider(&theme, Axis::Horizontal)
                         .id("sidebar-split")
@@ -1633,6 +1709,7 @@ impl Render for Cydonia {
                         .on_drag(SplitDrag, |_, _, _, cx| cx.new(|_| Empty)),
                 )
             })
+            .when(drawn, |root| root.child(self.drawer(window, cx)))
             .children(
                 self.workspace
                     .read(cx)
@@ -1649,3 +1726,7 @@ impl Render for Cydonia {
         bezel::ui::window::frame(root, window, cx)
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/narrow_layout.rs"]
+mod narrow_layout_tests;
