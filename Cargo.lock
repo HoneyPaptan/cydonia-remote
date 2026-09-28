@@ -2492,6 +2492,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cydonia-remote"
+version = "0.1.19"
+dependencies = [
+ "base64 0.22.1",
+ "cydonia-artifact",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "data-url"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
