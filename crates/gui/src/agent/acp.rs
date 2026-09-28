@@ -37,7 +37,10 @@ use std::process::Stdio;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 use std::{
     path::PathBuf,
-    sync::{Arc, OnceLock},
+    sync::{
+        Arc, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 use tokio::{
@@ -64,6 +67,10 @@ const SERVER: &str = "cydonia";
 /// stdin outlives every handle this side can drop.
 const SHUTDOWN_GRACE: Duration = Duration::from_millis(250);
 
+const CANCEL_GRACE: Duration = Duration::from_secs(5);
+
+pub type Turn = u64;
+
 /// The runtime every connection runs on, started on first use.
 pub fn runtime() -> &'static Runtime {
     static RUNTIME: OnceLock<Runtime> = OnceLock::new();
@@ -80,7 +87,7 @@ pub enum Event {
     /// off its own task and only approximately in step with the rest.
     Stderr(String),
     /// The prompt turn settled: its stop reason, or the agent's error.
-    TurnDone(Result<StopReason, Error>),
+    TurnDone(Turn, Result<StopReason, Error>),
     /// The agent's read loop ended — the process died or closed its stdout.
     /// Last in wire order, so any final updates land before the frontend
     /// gives the session up.
@@ -135,6 +142,7 @@ pub struct Session {
     pub loaded: bool,
     built_in_mcp: bool,
     history_fork: Option<Arc<Mutex<HistoryFork>>>,
+    turns: Arc<AtomicU64>,
 }
 
 /// How to open a session.
@@ -348,6 +356,7 @@ impl Session {
             loaded,
             built_in_mcp,
             history_fork,
+            turns: Arc::default(),
         };
         session.restore_choices(&launch.choices).await?;
         Ok(session)
@@ -442,7 +451,8 @@ impl Session {
     /// Pictures the message points at go along as image blocks when the agent
     /// takes them, read and encoded off the UI thread. An agent that does not
     /// still has their paths in the text.
-    pub fn prompt(&self, content: &str) {
+    pub fn prompt(&self, content: &str) -> Turn {
+        let turn = self.turns.fetch_add(1, Ordering::Relaxed) + 1;
         let capabilities = &self.init.agent_capabilities.prompt_capabilities;
         let pictures = match capabilities.image {
             true => media::attached(content),
@@ -486,18 +496,26 @@ impl Session {
                 None => conn.prompt(request).await,
             };
             let done = result.map(|response| response.stop_reason);
-            let _ = tx.send(Event::TurnDone(done));
+            let _ = tx.send(Event::TurnDone(turn, done));
         });
+        turn
     }
 
     /// Cancel the in-flight turn (`session/cancel`). The turn still ends
     /// with an [`Event::TurnDone`] carrying `StopReason::Cancelled`. Pending
     /// permission replies are the frontend's to answer `Cancelled`.
     pub fn cancel(&self) -> Result<(), Error> {
-        self.conn().cancel(CancelNotification {
+        let sent = self.conn().cancel(CancelNotification {
             session_id: self.session_id.clone(),
             meta: None,
-        })
+        });
+        let turn = self.turns.load(Ordering::Relaxed);
+        let tx = self.tx.clone();
+        runtime().spawn(async move {
+            tokio::time::sleep(CANCEL_GRACE).await;
+            let _ = tx.send(Event::TurnDone(turn, Ok(StopReason::Cancelled)));
+        });
+        sent
     }
 
     /// Switch the session mode (`session/set_mode`). Fire-and-forget:

@@ -92,7 +92,7 @@ fn agent_events_preserve_user_submission_order() {
             serde_json::json!({"sessionUpdate": "tool_call_update", "toolCallId": "tool", "status": "completed"}),
         ),
         update(serde_json::json!({"sessionUpdate": "plan", "entries": []})),
-        Event::TurnDone(Ok(StopReason::EndTurn)),
+        Event::TurnDone(1, Ok(StopReason::EndTurn)),
     ] {
         chat.updated = UNIX_EPOCH;
         chat.apply(event);
@@ -107,11 +107,12 @@ fn queued_submission_updates_order_immediately_and_survives_restore() {
     chat.record = None;
     chat.items.push(ChatItem::User("previous prompt".into()));
     chat.streaming = true;
+    chat.turn = Some(1);
     chat.send("next prompt".into());
     assert!(chat.touched() > 1000);
     assert_eq!(chat.queue.front().map(String::as_str), Some("next prompt"));
     let submitted = chat.updated;
-    chat.apply(Event::TurnDone(Ok(StopReason::EndTurn)));
+    chat.apply(Event::TurnDone(1, Ok(StopReason::EndTurn)));
     assert_eq!(chat.updated, submitted);
     let stored = fs::Project::new(&scratch.0).sessions().pop().unwrap();
     let restored = ChatSession::restore(2, scratch.0.clone(), agent("/bin/false", &[]), stored);
@@ -211,7 +212,7 @@ for line in sys.stdin:
         assert!(chat.touched() > 1000);
         chat.send("queued prompt".into());
         let submitted = chat.updated;
-        chat.apply(Event::TurnDone(Ok(StopReason::EndTurn)));
+        chat.apply(Event::TurnDone(1, Ok(StopReason::EndTurn)));
         assert!(chat.queue.is_empty());
         assert_eq!(
             chat.updated, submitted,
@@ -220,6 +221,64 @@ for line in sys.stdin:
         chat.close();
         assert!(chat.closed);
         assert!(!chat.live());
+        wait_for_close(&mut events).await;
+    });
+}
+
+#[test]
+fn stopping_a_turn_the_agent_never_settles_frees_the_session() {
+    const AGENT: &str = r#"
+import json, sys
+for line in sys.stdin:
+    req = json.loads(line)
+    if 'id' not in req or req['method'] == 'session/prompt':
+        continue
+    if req['method'] == 'initialize':
+        result = {'protocolVersion': 1, 'agentCapabilities': {}, 'authMethods': []}
+    elif req['method'] == 'session/new':
+        result = {'sessionId': 'test'}
+    else:
+        result = {}
+    print(json.dumps({'jsonrpc': '2.0', 'id': req['id'], 'result': result}), flush=True)
+"#;
+    let scratch = Scratch::new();
+    acp::runtime().block_on(async {
+        let (tx, mut events) = acp::channel();
+        let session = tokio::time::timeout(
+            Duration::from_secs(5),
+            Session::spawn(
+                &agent("/usr/bin/python3", &["-u", "-c", AGENT]),
+                Launch::new(scratch.0.clone()),
+                tx,
+            ),
+        )
+        .await
+        .expect("agent did not connect")
+        .unwrap();
+        let mut chat = scratch.chat();
+        chat.record = None;
+        chat.connection = Connection::Live(Box::new(session));
+        chat.send("first prompt".into());
+        chat.send("queued prompt".into());
+        chat.cancel();
+        chat.cancel();
+        let settled = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if let Some(Event::TurnDone(turn, result)) = events.recv().await {
+                    return (turn, result);
+                }
+            }
+        })
+        .await
+        .expect("a stop the agent never confirmed left the turn running");
+        assert!(matches!(settled, (1, Ok(StopReason::Cancelled))));
+        chat.apply(Event::TurnDone(settled.0, settled.1));
+        assert!(chat.queue.is_empty(), "the queued prompt goes out once the turn ends");
+        assert!(chat.streaming);
+        assert_eq!(chat.turn, Some(2));
+        chat.apply(Event::TurnDone(1, Ok(StopReason::Cancelled)));
+        assert!(chat.streaming, "a second stop for the first turn must not end the second");
+        chat.close();
         wait_for_close(&mut events).await;
     });
 }

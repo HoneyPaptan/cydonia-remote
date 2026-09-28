@@ -222,6 +222,8 @@ pub struct ChatSession {
     pub streaming: bool,
     pub(crate) last_activity: Instant,
     pub(crate) turn_started: Option<Instant>,
+    #[cfg(feature = "desktop")]
+    pub(crate) turn: Option<u64>,
     pub(crate) tool_started: BTreeMap<String, Instant>,
     /// Prompts waiting for an agent to send them to: what was typed while a
     /// turn was in flight, and what a dispatched card opened the session with.
@@ -296,6 +298,8 @@ impl ChatSession {
             streaming: false,
             last_activity: Instant::now(),
             turn_started: None,
+            #[cfg(feature = "desktop")]
+            turn: None,
             tool_started: BTreeMap::new(),
             queue: seed.into_iter().collect(),
             transcript: transcript::State::default(),
@@ -339,6 +343,8 @@ impl ChatSession {
             streaming: false,
             last_activity: Instant::now(),
             turn_started: None,
+            #[cfg(feature = "desktop")]
+            turn: None,
             tool_started: BTreeMap::new(),
             queue: VecDeque::new(),
             transcript: transcript::State::default(),
@@ -670,7 +676,9 @@ impl ChatSession {
                 self.queue.push_front(content);
                 return;
             };
-            session.prompt(&content);
+            let turn = session.prompt(&content);
+            self.turn = Some(turn);
+            self.trace(&format!("turn {turn} sent"));
             self.last_activity = Instant::now();
             self.turn_started = Some(self.last_activity);
             self.tool_started.clear();
@@ -705,10 +713,11 @@ impl ChatSession {
             prompt.reply.send(RequestPermissionResponse::cancelled());
         }
         #[cfg(feature = "desktop")]
-        if let Connection::Live(session) = &self.connection
-            && let Err(e) = session.cancel()
-        {
-            self.notice(true, &format!("cancel failed: {}", acp::error_text(&e)));
+        if let Connection::Live(session) = &self.connection {
+            self.trace(&format!("cancel sent for turn {:?}", self.turn));
+            if let Err(e) = session.cancel() {
+                self.notice(true, &format!("cancel failed: {}", acp::error_text(&e)));
+            }
         }
     }
 
@@ -875,7 +884,13 @@ impl ChatSession {
             Event::Update(update) => self.apply_update(update),
             Event::Permission(request, reply) => self.open_permission(request, reply),
             Event::Stderr(line) => self.stderr(line),
-            Event::TurnDone(result) => {
+            Event::TurnDone(turn, result) => {
+                if self.turn != Some(turn) {
+                    self.trace(&format!("turn {turn} settled again, ignored"));
+                    return;
+                }
+                self.trace(&format!("turn {turn} done: {result:?}"));
+                self.turn = None;
                 if result.is_ok()
                     && let Some(fork) = &mut self.fork
                 {
@@ -904,8 +919,10 @@ impl ChatSession {
                 self.drain();
             }
             Event::Closed => {
+                self.trace("agent connection closed");
                 self.connection = Connection::Lost;
                 self.streaming = false;
+                self.turn = None;
                 self.fail_running_tools();
                 self.notice(true, "agent connection lost");
                 self.flush();
@@ -1107,6 +1124,15 @@ impl ChatSession {
             command: command_line(&self.entry),
             output: line,
         });
+    }
+
+    #[cfg(feature = "desktop")]
+    fn trace(&self, what: &str) {
+        let at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        eprintln!("{at} session {} ({}): {what}", self.id, self.entry.name);
     }
 
     pub(crate) fn notice(&mut self, failed: bool, text: &str) {

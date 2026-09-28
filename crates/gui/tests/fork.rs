@@ -53,7 +53,7 @@ async fn answer(events: &mut acp::Events) -> String {
                         text.push_str(&body.text);
                     }
                 }
-                Event::TurnDone(result) => {
+                Event::TurnDone(_, result) => {
                     result.unwrap();
                     return text;
                 }
