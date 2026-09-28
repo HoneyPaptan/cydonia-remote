@@ -4,7 +4,7 @@
 //! `use super::*`: these methods work on the same struct and reach the same
 //! names as the rest of it.
 use super::*;
-use artifact::project::Project as _;
+use artifact::{project::Project as _, session::record::Record};
 
 impl Workspace {
     /// Open a session in the active project. `seed` is its first prompt, sent
@@ -34,6 +34,11 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> Option<u64> {
         if !self.settings.features.sessions || ix >= self.projects.len() {
+            return None;
+        }
+        #[cfg(not(feature = "desktop"))]
+        if let Some(sink) = crate::model::sink::get() {
+            sink.new_session(&self.projects[ix].path, &entry.name, seed);
             return None;
         }
         let id = self.next_id;
@@ -292,6 +297,28 @@ impl Workspace {
     ) -> Option<u64> {
         let ix = self.project_at(path)?;
         self.new_session_in(ix, entry, seed, false, cx)
+    }
+
+    pub fn adopt_session(&mut self, path: &Path, record: Record) -> Option<u64> {
+        let ix = self.project_at(path)?;
+        let id = self.next_id;
+        self.next_id += 1;
+        let entry = super::named(
+            &self.settings.agents,
+            record.agent_id.as_deref(),
+            &record.agent,
+        )
+        .cloned()
+        .unwrap_or_else(|| settings::Agent {
+            name: record.agent.clone(),
+            id: record.agent_id.clone(),
+            command: String::new(),
+            args: Vec::new(),
+            env: Default::default(),
+        });
+        let chat = ChatSession::restore(id, self.projects[ix].path.clone(), entry, record);
+        self.projects[ix].sessions.push(chat);
+        Some(id)
     }
 
     /// Send a message with pictures. Each is kept in the project's assets and

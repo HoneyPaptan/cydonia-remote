@@ -3,12 +3,14 @@ use artifact::session::chat::ChatItem;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Mirror {
+    pub agents: Vec<String>,
     pub projects: Vec<ProjectView>,
 }
 
 impl Mirror {
     pub fn from_snapshot(snapshot: Snapshot) -> Self {
         Self {
+            agents: snapshot.agents,
             projects: snapshot.projects,
         }
     }
@@ -18,6 +20,7 @@ impl Mirror {
             version: VERSION,
             epoch,
             seq,
+            agents: self.agents.clone(),
             projects: self.projects.clone(),
         }
     }
@@ -44,6 +47,7 @@ impl Mirror {
 
     pub fn apply(&mut self, change: &Change) {
         match change {
+            Change::Agents { agents } => self.agents = agents.clone(),
             Change::ProjectPut { project } => match self.project_mut(&project.path) {
                 Some(held) => *held = project.clone(),
                 None => self.projects.push(project.clone()),
@@ -72,22 +76,11 @@ impl Mirror {
                     session.header = header.clone();
                 }
             }
-            Change::ItemsTruncate { key, len } => {
+            Change::ItemsTruncate { key, .. }
+            | Change::ItemReplace { key, .. }
+            | Change::ItemsAppend { key, .. } => {
                 if let Some(session) = self.session_mut(key) {
-                    session.items.truncate(*len);
-                }
-            }
-            Change::ItemReplace { key, index, item } => {
-                if let Some(slot) = self
-                    .session_mut(key)
-                    .and_then(|session| session.items.get_mut(*index))
-                {
-                    *slot = item.clone();
-                }
-            }
-            Change::ItemsAppend { key, items } => {
-                if let Some(session) = self.session_mut(key) {
-                    session.items.extend(items.iter().cloned());
+                    apply_items(&mut session.items, change);
                 }
             }
             Change::FilePut {
@@ -109,6 +102,11 @@ impl Mirror {
 
     pub fn diff(&self, next: &Mirror) -> Vec<Change> {
         let mut changes = Vec::new();
+        if self.agents != next.agents {
+            changes.push(Change::Agents {
+                agents: next.agents.clone(),
+            });
+        }
         for project in &self.projects {
             if next.project(&project.path).is_none() {
                 changes.push(Change::ProjectRemoved {
@@ -143,6 +141,19 @@ impl Mirror {
         for change in changes {
             self.apply(change);
         }
+    }
+}
+
+pub fn apply_items(items: &mut Vec<ChatItem>, change: &Change) {
+    match change {
+        Change::ItemsTruncate { len, .. } => items.truncate(*len),
+        Change::ItemReplace { index, item, .. } => {
+            if let Some(slot) = items.get_mut(*index) {
+                *slot = item.clone();
+            }
+        }
+        Change::ItemsAppend { items: added, .. } => items.extend(added.iter().cloned()),
+        _ => {}
     }
 }
 

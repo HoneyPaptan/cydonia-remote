@@ -17,6 +17,7 @@ pub mod project;
 pub mod session;
 pub mod session_preferences;
 pub mod settings;
+pub mod sink;
 pub mod spaces;
 pub mod state;
 pub mod store;

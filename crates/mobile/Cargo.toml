@@ -1,0 +1,36 @@
+[package]
+name = "cydonia-mobile"
+description = "Cydonia's own window in a phone's web view, over a running Cydonia on another machine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+artifact.workspace = true
+bezel.workspace = true
+console_error_panic_hook = "0.1"
+futures.workspace = true
+gpui_web = { version = "0.3.12", package = "bezel-gpui-web" }
+gui.workspace = true
+js-sys = "0.3"
+remote.workspace = true
+serde_json.workspace = true
+web-time.workspace = true
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["CloseEvent", "Document", "Element", "Headers", "Location", "MessageEvent", "Request", "RequestInit", "Response", "WebSocket", "Window"] }
+
+[dependencies]
+artifact.workspace = true
+bezel.workspace = true
+gui.workspace = true
+remote.workspace = true
+serde_json.workspace = true
+web-time.workspace = true

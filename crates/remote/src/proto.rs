@@ -12,6 +12,7 @@ pub struct Snapshot {
     pub version: u32,
     pub epoch: u64,
     pub seq: u64,
+    pub agents: Vec<String>,
     pub projects: Vec<ProjectView>,
 }
 
@@ -103,6 +104,9 @@ pub struct Event {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Change {
+    Agents {
+        agents: Vec<String>,
+    },
     ProjectPut {
         project: ProjectView,
     },

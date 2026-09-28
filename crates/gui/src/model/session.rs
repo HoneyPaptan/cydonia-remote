@@ -149,14 +149,14 @@ pub struct PermissionPrompt {
     reply: Reply<RequestPermissionResponse>,
 }
 
-#[cfg(all(test, feature = "desktop"))]
 impl PermissionPrompt {
-    pub fn standing(request: u64, title: &str, options: Vec<Choice>) -> Self {
+    pub fn new(request: u64, title: String, options: Vec<Choice>, always: bool) -> Self {
         Self {
             request,
-            title: title.to_owned(),
+            title,
             options,
-            always: false,
+            always,
+            #[cfg(feature = "desktop")]
             reply: acp::Reply::detached(),
         }
     }
@@ -612,9 +612,12 @@ impl ChatSession {
             return;
         }
         self.updated = SystemTime::now();
-        // No agent to wait for: the stand-in answers at once.
         #[cfg(not(feature = "desktop"))]
-        self.prompt(content);
+        match (crate::model::sink::get(), self.record.as_deref()) {
+            (Some(sink), Some(record)) => sink.send_prompt(&self.cwd, record, content),
+            (Some(_), None) => {}
+            (None, _) => self.prompt(content),
+        }
         #[cfg(feature = "desktop")]
         if self.streaming || !self.live() {
             self.queue.push_back(content);
@@ -686,6 +689,10 @@ impl ChatSession {
     /// Cancel the in-flight turn. A pending permission request MUST be
     /// answered `Cancelled` per spec before `session/cancel` goes out.
     pub fn cancel(&mut self) {
+        #[cfg(not(feature = "desktop"))]
+        if let (Some(sink), Some(record)) = (crate::model::sink::get(), self.record.as_deref()) {
+            sink.cancel(&self.cwd, record);
+        }
         #[cfg(feature = "desktop")]
         if let Some(prompt) = self.permission.take() {
             prompt.reply.send(RequestPermissionResponse::cancelled());
@@ -806,7 +813,13 @@ impl ChatSession {
     /// Answer the pending permission prompt with the chosen option id.
     pub fn respond_permission(&mut self, option_id: String) {
         #[cfg(not(feature = "desktop"))]
-        let _ = option_id;
+        if let (Some(sink), Some(record), Some(prompt)) = (
+            crate::model::sink::get(),
+            self.record.as_deref(),
+            self.permission.take(),
+        ) {
+            sink.respond_permission(&self.cwd, record, prompt.request, option_id);
+        }
         #[cfg(feature = "desktop")]
         if let Some(prompt) = self.permission.take() {
             prompt

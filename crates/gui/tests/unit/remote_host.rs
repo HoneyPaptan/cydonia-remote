@@ -69,14 +69,15 @@ fn key(project: &Project, record: &str) -> SessionKey {
 }
 
 fn prompt(request: u64) -> PermissionPrompt {
-    PermissionPrompt::standing(
+    PermissionPrompt::new(
         request,
-        "cargo test --workspace",
+        "cargo test --workspace".into(),
         vec![Choice {
             id: "allow".into(),
             name: "Allow".into(),
             kind: PermissionOptionKind::AllowOnce,
         }],
+        false,
     )
 }
 
@@ -84,7 +85,7 @@ fn prompt(request: u64) -> PermissionPrompt {
 fn the_mirror_carries_sessions_and_board_files() {
     let projects = vec![project_with_session("mirror")];
     let mut publisher = Publisher::new(Hub::new(1), None);
-    let mirror = publisher.mirror(&projects);
+    let mirror = publisher.mirror(&projects, &[agent()]);
     let project = mirror.project(&projects[0].path.to_string_lossy()).unwrap();
     let session = &project.sessions["s1"];
     assert_eq!(session.items.len(), 2);
@@ -98,9 +99,11 @@ fn publishing_twice_without_change_emits_nothing() {
     let projects = vec![project_with_session("quiet")];
     let hub = Hub::new(1);
     let mut publisher = Publisher::new(hub.clone(), None);
-    publisher.publish(&projects);
+    let next = publisher.mirror(&projects, &[agent()]);
+    publisher.hub.publish(next);
     let seq = hub.snapshot().seq;
-    publisher.publish(&projects);
+    let next = publisher.mirror(&projects, &[agent()]);
+    publisher.hub.publish(next);
     assert_eq!(hub.snapshot().seq, seq);
 }
 
@@ -109,12 +112,14 @@ fn a_new_transcript_item_becomes_one_event() {
     let mut projects = vec![project_with_session("append")];
     let hub = Hub::new(1);
     let mut publisher = Publisher::new(hub.clone(), None);
-    publisher.publish(&projects);
+    let next = publisher.mirror(&projects, &[agent()]);
+    publisher.hub.publish(next);
     let before = hub.snapshot().seq;
     projects[0].sessions[0]
         .items
         .push(ChatItem::Agent("more".into()));
-    publisher.publish(&projects);
+    let next = publisher.mirror(&projects, &[agent()]);
+    publisher.hub.publish(next);
     assert_eq!(hub.snapshot().seq, before + 1);
 }
 
@@ -123,7 +128,7 @@ fn a_standing_prompt_is_waiting_for_permission_with_its_request_id() {
     let mut projects = vec![project_with_session("waiting")];
     projects[0].sessions[0].permission = Some(prompt(41));
     let mut publisher = Publisher::new(Hub::new(1), None);
-    let mirror = publisher.mirror(&projects);
+    let mirror = publisher.mirror(&projects, &[agent()]);
     let header = &mirror.session(&key(&projects[0], "s1")).unwrap().header;
     assert_eq!(header.status, Status::WaitingForPermission);
     let permission = header.permission.as_ref().unwrap();

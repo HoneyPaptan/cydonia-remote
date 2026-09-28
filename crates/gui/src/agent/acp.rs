@@ -113,7 +113,6 @@ impl<T> Reply<T> {
         let _ = self.0.send(Ok(value));
     }
 
-    #[cfg(test)]
     pub fn detached() -> Self {
         Self(oneshot::channel().0)
     }

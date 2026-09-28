@@ -1,5 +1,5 @@
 use super::{route, view};
-use crate::model::{project::Project, session::ChatSession, workspace::Workspace};
+use crate::model::{project::Project, session::ChatSession, settings, workspace::Workspace};
 use anyhow::Result;
 use artifact::{
     project::{Project as _, Watching},
@@ -89,7 +89,7 @@ impl Publisher {
             .clone()
     }
 
-    fn mirror(&mut self, open: &[Project]) -> Mirror {
+    fn mirror(&mut self, open: &[Project], agents: &[settings::Agent]) -> Mirror {
         self.follow(open);
         let mut projects = Vec::with_capacity(open.len());
         for project in open {
@@ -109,11 +109,14 @@ impl Publisher {
             }
             projects.push(held);
         }
-        Mirror { projects }
+        Mirror {
+            agents: agents.iter().map(|agent| agent.name.clone()).collect(),
+            projects,
+        }
     }
 
-    fn publish(&mut self, projects: &[Project]) {
-        let next = self.mirror(projects);
+    fn publish(&mut self, workspace: &Workspace) {
+        let next = self.mirror(&workspace.projects, &workspace.settings.agents);
         self.hub.publish(next);
     }
 }
@@ -150,11 +153,11 @@ pub fn start(workspace: Entity<Workspace>, options: Options, cx: &mut App) -> Re
 
     let (knock, mut knocks) = mpsc::unbounded();
     let publisher = Rc::new(RefCell::new(Publisher::new(hub, Some(knock))));
-    publisher.borrow_mut().publish(&workspace.read(cx).projects);
+    publisher.borrow_mut().publish(workspace.read(cx));
 
     let observed = publisher.clone();
     cx.observe(&workspace, move |workspace, cx| {
-        observed.borrow_mut().publish(&workspace.read(cx).projects);
+        observed.borrow_mut().publish(workspace.read(cx));
     })
     .detach();
 
@@ -163,7 +166,7 @@ pub fn start(workspace: Entity<Workspace>, options: Options, cx: &mut App) -> Re
     cx.spawn(async move |cx| {
         while let Some(path) = knocks.next().await {
             watched.borrow_mut().dirty.insert(path);
-            cx.update(|cx| watched.borrow_mut().publish(&reread.read(cx).projects));
+            cx.update(|cx| watched.borrow_mut().publish(reread.read(cx)));
         }
     })
     .detach();

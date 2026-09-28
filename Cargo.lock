@@ -2492,6 +2492,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "cydonia-mobile"
+version = "0.1.19"
+dependencies = [
+ "bezel",
+ "bezel-gpui-web",
+ "console_error_panic_hook",
+ "cydonia-artifact",
+ "cydonia-gui",
+ "cydonia-remote",
+ "futures",
+ "js-sys",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
+]
+
+[[package]]
 name = "cydonia-prompts"
 version = "0.1.19"
 dependencies = [

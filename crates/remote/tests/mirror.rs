@@ -15,7 +15,10 @@ fn assert_round_trip(before: &Mirror, after: &Mirror) -> Vec<Change> {
 }
 
 fn mirror(projects: Vec<cydonia_remote::proto::ProjectView>) -> Mirror {
-    Mirror { projects }
+    Mirror {
+        agents: vec!["Claude Code".into()],
+        projects,
+    }
 }
 
 #[test]
@@ -170,7 +173,11 @@ fn random_mirror(rng: &mut Rng) -> Mirror {
     for i in 0..len {
         projects.swap(i, rng.next(len));
     }
-    mirror(projects)
+    let mut held = mirror(projects);
+    if rng.next(3) == 0 {
+        held.agents.push("Codex".into());
+    }
+    held
 }
 
 #[test]
@@ -181,4 +188,13 @@ fn any_diff_applied_rebuilds_the_target() {
         let after = random_mirror(&mut rng);
         assert_round_trip(&before, &after);
     }
+}
+
+#[test]
+fn a_new_agent_list_is_one_change() {
+    let before = mirror(vec![]);
+    let mut after = mirror(vec![]);
+    after.agents.push("Codex".into());
+    let changes = assert_round_trip(&before, &after);
+    assert!(matches!(changes.as_slice(), [Change::Agents { .. }]));
 }
