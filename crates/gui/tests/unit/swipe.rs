@@ -43,10 +43,19 @@ fn open_phone(
 }
 
 fn pan(across: f32, down: f32, visual: &mut gpui::VisualTestContext) {
+    pan_from(point(px(200.), px(400.)), across, down, visual);
+}
+
+fn pan_from(
+    at: gpui::Point<gpui::Pixels>,
+    across: f32,
+    down: f32,
+    visual: &mut gpui::VisualTestContext,
+) {
     visual.update(|window, cx| window.draw(cx).clear(cx));
     let step = |touch_phase, x: f32, y: f32| {
         PlatformInput::ScrollWheel(gpui::ScrollWheelEvent {
-            position: point(px(200.), px(400.)),
+            position: at,
             delta: ScrollDelta::Pixels(point(px(x), px(y))),
             modifiers: gpui::Modifiers::default(),
             touch_phase,
@@ -112,4 +121,26 @@ fn a_quick_short_flick_still_opens_the_sidebar(cx: &mut gpui::TestAppContext) {
 
     pan(24., 0., &mut visual);
     assert_eq!(open(&root, &mut visual), (true, false));
+}
+
+#[gpui::test]
+fn swiping_up_from_the_bottom_opens_quick_actions_and_down_closes_them(
+    cx: &mut gpui::TestAppContext,
+) {
+    let scratch = Scratch::new("quick");
+    let (root, mut visual) = open_phone(&scratch, cx);
+
+    pan_from(point(px(200.), px(760.)), 0., -200., &mut visual);
+    assert!(root.read_with(&visual, |root, _| root.quick));
+    pan(0., 200., &mut visual);
+    assert!(!root.read_with(&visual, |root, _| root.quick));
+}
+
+#[gpui::test]
+fn swiping_up_from_the_middle_leaves_quick_actions_closed(cx: &mut gpui::TestAppContext) {
+    let scratch = Scratch::new("quick-middle");
+    let (root, mut visual) = open_phone(&scratch, cx);
+
+    pan(0., -200., &mut visual);
+    assert!(!root.read_with(&visual, |root, _| root.quick));
 }

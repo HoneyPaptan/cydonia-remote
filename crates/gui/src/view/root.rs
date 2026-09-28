@@ -1745,10 +1745,10 @@ impl Render for Cydonia {
             // is answerable while it is asking.
             .children(self.confirm_delete(cx))
             .children(self.search_palette(cx))
-            .children(self.quick_actions(window, cx))
             .children(self.settings_sheet(window, cx))
             .children(self.desktop_only_notice(cx))
-            .children(self.new_board_dialog(cx));
+            .children(self.new_board_dialog(cx))
+            .children(self.quick_actions(window, cx));
         bezel::ui::window::frame(root, window, cx)
     }
 }

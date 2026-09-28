@@ -11,7 +11,7 @@ use bezel::{
 const SWIPE_DISTANCE: f32 = 40.;
 const FLICK_DISTANCE: f32 = 16.;
 const EDGE: f32 = 24.;
-const PULL_BAND: f32 = 64.;
+const PULL_BAND: f32 = 96.;
 const LIFT_DISTANCE: f32 = 8.;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -232,8 +232,9 @@ impl Cydonia {
             let owned = !at_edge(at, window) && touch::scrolls_sideways_at(at);
             return (!owned && !self.quick).then_some(Swipe::Following(across));
         }
-        let from_top = f32::from(at.y) < PULL_BAND && down > 0.;
-        (from_top || (self.quick && down < 0.)).then_some(Swipe::Pulling(down))
+        let floor = f32::from(window.viewport_size().height) - PULL_BAND;
+        let from_bottom = f32::from(at.y) > floor && down < 0.;
+        (from_bottom || (self.quick && down > 0.)).then_some(Swipe::Pulling(down))
     }
 
     fn settle_swipe(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -251,7 +252,7 @@ impl Cydonia {
     }
 
     fn pull(&mut self, far: f32, cx: &mut Context<Self>) {
-        match far > 0. {
+        match far < 0. {
             true => self.open_quick_actions(cx),
             false => {
                 self.close_quick_actions(cx);

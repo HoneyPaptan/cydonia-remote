@@ -116,6 +116,7 @@ impl Cydonia {
                 .absolute()
                 .inset_0()
                 .bg(theme.scrim())
+                .child(bezel::ui::cover::cover())
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.close_quick_actions(cx);
                 }))
@@ -123,34 +124,34 @@ impl Cydonia {
                     div()
                         .id("quick-actions-sheet")
                         .absolute()
-                        .top_0()
+                        .bottom_0()
                         .left_0()
                         .right_0()
                         .flex()
                         .flex_col()
                         .gap(px(12.))
                         .px(px(16.))
-                        .pt(px(20.))
-                        .pb(px(16.))
-                        .rounded_b(px(16.))
+                        .pt(px(12.))
+                        .pb(px(24.))
+                        .rounded_t(px(16.))
                         .bg(content_bg(&theme))
                         .on_click(|_, _, cx| cx.stop_propagation())
+                        .child(
+                            div()
+                                .mx_auto()
+                                .mb(px(4.))
+                                .w(px(36.))
+                                .h(px(4.))
+                                .rounded_full()
+                                .bg(theme.text_faint),
+                        )
                         .child(
                             div()
                                 .text_style(TextStyle::Caption)
                                 .text_color(theme.text_muted)
                                 .child("Quick actions"),
                         )
-                        .child(div().grid().grid_cols(columns).gap(px(8.)).children(buttons))
-                        .child(
-                            div()
-                                .mx_auto()
-                                .mt(px(4.))
-                                .w(px(36.))
-                                .h(px(4.))
-                                .rounded_full()
-                                .bg(theme.text_faint),
-                        ),
+                        .child(div().grid().grid_cols(columns).gap(px(8.)).children(buttons)),
                 )
                 .into_any_element(),
         )
