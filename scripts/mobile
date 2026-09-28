@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+out="${1:-$root/target/mobile}"
+profile="${PROFILE:-release}"
+
+cd "$root"
+cargo build -p cydonia-mobile --lib --target wasm32-unknown-unknown --profile "$profile"
+wasm-bindgen --target web --no-typescript --remove-name-section \
+  --out-dir "$out" "target/wasm32-unknown-unknown/$profile/cydonia_mobile.wasm"
+if command -v wasm-opt >/dev/null && [ "$profile" = release ]; then
+  wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext \
+    --enable-mutable-globals --enable-reference-types \
+    -o "$out/cydonia_mobile_bg.wasm" "$out/cydonia_mobile_bg.wasm"
+fi
+cp crates/mobile/index.html "$out/index.html"
+echo "$out"
