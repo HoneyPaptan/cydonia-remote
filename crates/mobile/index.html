@@ -71,10 +71,16 @@
 			window.addEventListener('contextmenu', keepLongPressesInsideTheApp, true);
 			document.addEventListener('selectstart', keepLongPressesInsideTheApp, true);
 
-			function putTheKeyboardAwayWhenHidden() {
-				if (document.hidden) document.activeElement?.blur?.();
+			function putTheKeyboardAway() {
+				const active = document.activeElement;
+				if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)
+					active.setAttribute('inputmode', 'none');
+				active?.blur?.();
 			}
-			document.addEventListener('visibilitychange', putTheKeyboardAwayWhenHidden);
+			document.addEventListener('visibilitychange', () => {
+				if (document.hidden) putTheKeyboardAway();
+			});
+			window.addEventListener('cydonia-pause', putTheKeyboardAway);
 
 			function scaleTheInterface(scale) {
 				const ratio = window.devicePixelRatio;

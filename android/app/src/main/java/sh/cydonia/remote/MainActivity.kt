@@ -62,6 +62,11 @@ class MainActivity : Activity() {
     nudge()
   }
 
+  override fun onPause() {
+    web?.evaluateJavascript("window.dispatchEvent(new Event('cydonia-pause'))", null)
+    super.onPause()
+  }
+
   override fun onDestroy() {
     runCatching { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(networkCallback) }
     super.onDestroy()
