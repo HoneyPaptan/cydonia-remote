@@ -102,6 +102,9 @@ pub fn load(cwd: &Path, agent: &Agent, session: Option<&str>) -> Choices {
 }
 
 fn edit(cwd: &Path, agent: &Agent, change: impl FnOnce(&mut AgentChoices)) -> Result<()> {
+    if cfg!(not(feature = "desktop")) {
+        return Ok(());
+    }
     let path = path()?;
     let mut stored = read(&path)?;
     let before = serde_json::to_vec(&stored)?;

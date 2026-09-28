@@ -69,7 +69,7 @@ fn keep(chat: &mut ChatSession, record: &str, view: &SessionView) {
     header(chat, &view.header);
 }
 
-fn chat_mut<'a>(workspace: &'a mut Workspace, key: &SessionKey) -> Option<&'a mut ChatSession> {
+pub(crate) fn chat_mut<'a>(workspace: &'a mut Workspace, key: &SessionKey) -> Option<&'a mut ChatSession> {
     workspace
         .projects
         .iter_mut()

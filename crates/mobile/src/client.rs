@@ -19,7 +19,7 @@ use gui::{
 };
 use remote::{
     mirror::Mirror,
-    proto::{Action, Command, Event, Frame, SessionKey, VERSION},
+    proto::{Action, Command, Event, Frame, Outcome, SessionKey, VERSION},
 };
 use std::{
     borrow::Cow,
@@ -66,6 +66,35 @@ fn hide_boot() {
 
 struct Commands {
     endpoint: Rc<Endpoint>,
+    opening: Rc<Opening>,
+    app: AsyncApp,
+}
+
+struct Opening {
+    wanted: RefCell<Option<SessionKey>>,
+    workspace: Entity<Workspace>,
+}
+
+impl Opening {
+    fn want(&self, key: SessionKey) {
+        *self.wanted.borrow_mut() = Some(key);
+    }
+
+    fn settle(&self, cx: &mut AsyncApp) {
+        let Some(key) = self.wanted.borrow().clone() else {
+            return;
+        };
+        let opened = self.workspace.update(cx, |workspace, cx| {
+            let Some(id) = apply::chat_mut(workspace, &key).map(|chat| chat.id) else {
+                return false;
+            };
+            workspace.select_session(id, cx);
+            true
+        });
+        if opened {
+            self.wanted.borrow_mut().take();
+        }
+    }
 }
 
 fn key(project: &Path, record: &str) -> SessionKey {
@@ -78,6 +107,8 @@ fn key(project: &Path, record: &str) -> SessionKey {
 impl Commands {
     fn deliver(&self, action: Action) {
         let endpoint = self.endpoint.clone();
+        let opening = self.opening.clone();
+        let mut cx = self.app.clone();
         let command = Command {
             id: net::fresh_id(),
             action,
@@ -85,7 +116,11 @@ impl Commands {
         wasm_bindgen_futures::spawn_local(async move {
             let mut wait = FIRST_WAIT;
             for _ in 0..ATTEMPTS {
-                if endpoint.command(&command).await.is_ok() {
+                if let Ok(ack) = endpoint.command(&command).await {
+                    if let Outcome::Created { key } = ack.outcome {
+                        opening.want(key);
+                        opening.settle(&mut cx);
+                    }
                     return;
                 }
                 net::sleep(wait).await;
@@ -134,6 +169,7 @@ impl Sink for Commands {
 
 struct Client {
     endpoint: Rc<Endpoint>,
+    opening: Rc<Opening>,
     workspace: Entity<Workspace>,
     mirror: RefCell<Mirror>,
     epoch: Cell<u64>,
@@ -155,6 +191,7 @@ impl Client {
         self.workspace.update(cx, |workspace, cx| {
             apply::change(workspace, &mirror, &event.change, cx)
         });
+        self.opening.settle(cx);
         true
     }
 
@@ -169,6 +206,7 @@ impl Client {
         self.workspace.update(cx, |workspace, cx| {
             apply::everything(workspace, &mirror, cx)
         });
+        self.opening.settle(cx);
         true
     }
 
@@ -278,11 +316,18 @@ async fn boot() -> Result<(), String> {
             let workspace = window
                 .read_with(cx, |root, _| root.workspace())
                 .expect("the window holds a workspace");
+            let opening = Rc::new(Opening {
+                wanted: RefCell::new(None),
+                workspace: workspace.clone(),
+            });
             gui::model::sink::install(Rc::new(Commands {
                 endpoint: endpoint.clone(),
+                opening: opening.clone(),
+                app: cx.to_async(),
             }));
             let client = Rc::new(Client {
                 endpoint,
+                opening,
                 workspace,
                 mirror: RefCell::new(mirror),
                 epoch: Cell::new(epoch),
