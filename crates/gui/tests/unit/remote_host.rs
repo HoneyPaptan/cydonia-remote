@@ -295,3 +295,20 @@ fn ids_that_climb_out_of_the_project_are_refused_before_touching_disk() {
             .all(|entry| { !entry.file_name().to_string_lossy().starts_with("escaped-") })
     );
 }
+
+#[test]
+fn every_written_id_must_be_a_plain_name_even_where_the_disk_would_refuse_it() {
+    let (dir, store) = fs_project("plain");
+    let project = project_of(&dir);
+    for id in ["..", ".hidden", "a/b", "a\\b", "", "name with space"] {
+        let attempt = remote::proto::Action::SaveProperties {
+            project: project.clone(),
+            id: id.into(),
+            properties: String::new(),
+        };
+        let error = super::route::perform(&store, &attempt)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("is not a plain name"), "{id:?}: {error}");
+    }
+}

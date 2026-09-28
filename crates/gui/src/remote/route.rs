@@ -61,7 +61,7 @@ pub fn perform(store: &Store, action: &Action) -> Result<()> {
             id,
             properties: text,
             ..
-        } => store.save_properties(id, &properties::parse(text)),
+        } => store.save_properties(plain(id)?, &properties::parse(text)),
         Action::RemoveArticle { id, .. } => store.remove_article(plain(id)?),
         _ => Ok(()),
     }
