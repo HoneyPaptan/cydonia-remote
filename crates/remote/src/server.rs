@@ -1,7 +1,7 @@
 use crate::{
     hub::Hub,
     log::Replay,
-    proto::{Ack, Action, Command, Event, Frame, Outcome, Reason, Snapshot},
+    proto::{Ack, Action, Answer, Command, Event, Frame, Outcome, Query as Asked, Reason, Screen, ShellInput, Snapshot},
     receipts::Receipts,
 };
 use axum::{
@@ -33,6 +33,23 @@ pub type Dispatch = mpsc::UnboundedSender<(Action, oneshot::Sender<Outcome>)>;
 pub struct Config {
     pub token: String,
     pub ui: Option<PathBuf>,
+    pub local: Option<Arc<dyn Local>>,
+}
+
+pub trait Local: Send + Sync + 'static {
+    fn answer(&self, query: Asked) -> Answer;
+    fn shell(&self, cwd: &str, cols: u16, rows: u16) -> Option<ShellLink>;
+}
+
+pub struct ShellLink {
+    pub input: Box<dyn Fn(ShellInput) + Send + Sync>,
+    pub screens: mpsc::UnboundedReceiver<Screen>,
+}
+
+impl Drop for ShellLink {
+    fn drop(&mut self) {
+        (self.input)(ShellInput::Close);
+    }
 }
 
 #[derive(Clone)]
@@ -42,9 +59,17 @@ struct Shared {
     ui: Option<Arc<Path>>,
     dispatch: Dispatch,
     receipts: Arc<tokio::sync::Mutex<Receipts>>,
+    local: Option<Arc<dyn Local>>,
 }
 
 const PROTOCOL: &str = "cydonia";
+
+#[derive(Deserialize)]
+struct Open {
+    cwd: String,
+    cols: Option<u16>,
+    rows: Option<u16>,
+}
 
 #[derive(Deserialize)]
 struct Subscribe {
@@ -59,11 +84,14 @@ pub fn router(config: Config, hub: Arc<Hub>, dispatch: Dispatch) -> Router {
         ui: config.ui.map(Into::into),
         dispatch,
         receipts: Arc::new(tokio::sync::Mutex::new(Receipts::new(RECEIPTS))),
+        local: config.local,
     };
     Router::new()
         .route("/v1/snapshot", get(snapshot))
         .route("/v1/commands", post(command))
         .route("/v1/events", get(events))
+        .route("/v1/query", post(query))
+        .route("/v1/shell", get(shell))
         .fallback(get(ui))
         .with_state(shared)
 }
@@ -173,6 +201,67 @@ async fn events(
     upgrade
         .protocols([PROTOCOL])
         .on_upgrade(move |socket| stream(socket, shared.hub, epoch, seq))
+}
+
+async fn query(
+    State(shared): State<Shared>,
+    headers: HeaderMap,
+    Json(asked): Json<Asked>,
+) -> Result<Json<Answer>, StatusCode> {
+    if !authorized(&shared, &headers) {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    let local = shared.local.clone().ok_or(StatusCode::NOT_FOUND)?;
+    tokio::task::spawn_blocking(move || local.answer(asked))
+        .await
+        .map(Json)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+async fn shell(
+    State(shared): State<Shared>,
+    Query(open): Query<Open>,
+    headers: HeaderMap,
+    upgrade: WebSocketUpgrade,
+) -> Response {
+    if !authorized_socket(&shared, &headers) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let Some(local) = shared.local.clone() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let cols = open.cols.unwrap_or(80).clamp(8, 500);
+    let rows = open.rows.unwrap_or(24).clamp(2, 300);
+    let Some(link) = local.shell(&open.cwd, cols, rows) else {
+        return StatusCode::FORBIDDEN.into_response();
+    };
+    upgrade
+        .protocols([PROTOCOL])
+        .on_upgrade(move |socket| drive_shell(socket, link))
+}
+
+async fn drive_shell(mut socket: WebSocket, mut link: ShellLink) {
+    use futures::StreamExt as _;
+    loop {
+        tokio::select! {
+            screen = link.screens.next() => {
+                let Some(screen) = screen else { return };
+                let Ok(text) = serde_json::to_string(&screen) else { return };
+                if socket.send(Message::Text(text.into())).await.is_err() {
+                    return;
+                }
+            }
+            incoming = socket.recv() => match incoming {
+                Some(Ok(Message::Text(text))) => {
+                    if let Ok(input) = serde_json::from_str::<ShellInput>(&text) {
+                        (link.input)(input);
+                    }
+                }
+                Some(Ok(Message::Close(_))) | Some(Err(_)) | None => return,
+                Some(Ok(_)) => {}
+            },
+        }
+    }
 }
 
 async fn send(socket: &mut WebSocket, frame: &Frame) -> bool {

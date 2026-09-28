@@ -58,6 +58,7 @@ async fn start_serving(ui: Option<std::path::PathBuf>) -> Running {
         Config {
             token: TOKEN.into(),
             ui,
+            local: None,
         },
         hub.clone(),
         dispatch,

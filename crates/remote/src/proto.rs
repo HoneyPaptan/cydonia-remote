@@ -258,3 +258,80 @@ pub enum Reason {
     Closed,
     Unavailable,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Query {
+    ReadDir { path: String },
+    ReadFile { path: String },
+    WriteFile { path: String, text: String },
+    Git { cwd: String, args: Vec<String> },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Answer {
+    Dir { entries: Vec<DirEntry> },
+    File { file: File },
+    Written,
+    Output(Output),
+    Failed { message: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DirEntry {
+    pub directory: bool,
+    pub path: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Output {
+    pub success: bool,
+    pub code: Option<i32>,
+    pub stdout: File,
+    pub stderr: String,
+    pub truncated: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ShellInput {
+    Keys { text: String },
+    Resize { cols: u16, rows: u16 },
+    Scroll { lines: i32 },
+    Close,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Screen {
+    pub rows: Vec<Vec<Run>>,
+    pub cursor: Option<(u16, u16)>,
+    pub title: Option<String>,
+    pub directory: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Run {
+    pub text: String,
+    pub fg: Color,
+    pub bg: Color,
+    #[serde(default, skip_serializing_if = "is_plain")]
+    pub style: u8,
+}
+
+pub const BOLD: u8 = 1;
+pub const DIM: u8 = 2;
+pub const ITALIC: u8 = 4;
+pub const UNDERLINE: u8 = 8;
+
+fn is_plain(style: &u8) -> bool {
+    *style == 0
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Color {
+    Default,
+    Indexed(u8),
+    Rgb(u8, u8, u8),
+}
