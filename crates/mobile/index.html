@@ -55,6 +55,11 @@
 			}
 			window.addEventListener('pointerleave', keepLiftedFingersFromLeavingTheCanvas, true);
 
+			function putTheKeyboardAwayWhenHidden() {
+				if (document.hidden) document.activeElement?.blur?.();
+			}
+			document.addEventListener('visibilitychange', putTheKeyboardAwayWhenHidden);
+
 			function scaleTheInterface(scale) {
 				const ratio = window.devicePixelRatio;
 				Object.defineProperty(window, 'devicePixelRatio', { get: () => ratio * scale });

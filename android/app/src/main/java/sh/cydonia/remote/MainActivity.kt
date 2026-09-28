@@ -3,6 +3,8 @@ package sh.cydonia.remote
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -31,6 +33,11 @@ class MainActivity : Activity() {
   private var pages: Pages? = null
   private val watchdog = Handler(Looper.getMainLooper())
   private val backCallback by lazy { OnBackInvokedCallback { goBack() } }
+  private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+    override fun onAvailable(network: Network) {
+      runOnUiThread { nudge() }
+    }
+  }
 
   override fun onCreate(state: Bundle?) {
     super.onCreate(state)
@@ -40,6 +47,7 @@ class MainActivity : Activity() {
         backCallback,
       )
     }
+    getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(networkCallback)
     val offered = Connection.from(intent?.data)
     if (offered != null) askFor(offered) else open(Connection.load(this))
   }
@@ -51,6 +59,15 @@ class MainActivity : Activity() {
 
   override fun onResume() {
     super.onResume()
+    nudge()
+  }
+
+  override fun onDestroy() {
+    runCatching { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(networkCallback) }
+    super.onDestroy()
+  }
+
+  private fun nudge() {
     web?.evaluateJavascript("window.dispatchEvent(new Event('cydonia-resume'))", null)
   }
 
@@ -152,6 +169,9 @@ class MainActivity : Activity() {
   private fun load(connection: Connection) {
     val view = WebView(this).apply {
       setBackgroundColor(Color.BLACK)
+      setLayerType(View.LAYER_TYPE_HARDWARE, null)
+      setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, true)
+      settings.offscreenPreRaster = true
       settings.javaScriptEnabled = true
       settings.domStorageEnabled = true
       settings.allowFileAccess = false
