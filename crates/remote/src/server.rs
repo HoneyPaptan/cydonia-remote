@@ -43,16 +43,12 @@ struct Shared {
     receipts: Arc<tokio::sync::Mutex<Receipts>>,
 }
 
+const PROTOCOL: &str = "cydonia";
+
 #[derive(Deserialize)]
 struct Subscribe {
     epoch: Option<u64>,
     seq: Option<u64>,
-    token: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct TokenQuery {
-    token: Option<String>,
 }
 
 pub fn router(config: Config, hub: Arc<Hub>, dispatch: Dispatch) -> Router {
@@ -105,18 +101,29 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
         .strip_prefix("Bearer ")
 }
 
-fn authorized(shared: &Shared, headers: &HeaderMap, query: Option<&str>) -> bool {
-    bearer(headers)
-        .or(query)
-        .is_some_and(|token| same(token, &shared.token))
+fn offered_protocols(headers: &HeaderMap) -> impl Iterator<Item = &str> {
+    headers
+        .get_all(header::SEC_WEBSOCKET_PROTOCOL)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','))
+        .map(str::trim)
+}
+
+fn authorized(shared: &Shared, headers: &HeaderMap) -> bool {
+    bearer(headers).is_some_and(|token| same(token, &shared.token))
+}
+
+fn authorized_socket(shared: &Shared, headers: &HeaderMap) -> bool {
+    authorized(shared, headers)
+        || offered_protocols(headers).any(|offered| same(offered, &shared.token))
 }
 
 async fn snapshot(
     State(shared): State<Shared>,
-    Query(query): Query<TokenQuery>,
     headers: HeaderMap,
 ) -> Result<Json<Snapshot>, StatusCode> {
-    if !authorized(&shared, &headers, query.token.as_deref()) {
+    if !authorized(&shared, &headers) {
         return Err(StatusCode::UNAUTHORIZED);
     }
     Ok(Json(shared.hub.snapshot()))
@@ -127,7 +134,7 @@ async fn command(
     headers: HeaderMap,
     Json(command): Json<Command>,
 ) -> Result<Json<Ack>, StatusCode> {
-    if !authorized(&shared, &headers, None) {
+    if !authorized(&shared, &headers) {
         return Err(StatusCode::UNAUTHORIZED);
     }
     let mut receipts = shared.receipts.lock().await;
@@ -157,12 +164,14 @@ async fn events(
     headers: HeaderMap,
     upgrade: WebSocketUpgrade,
 ) -> Response {
-    if !authorized(&shared, &headers, query.token.as_deref()) {
+    if !authorized_socket(&shared, &headers) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
     let epoch = query.epoch.unwrap_or_default();
     let seq = query.seq.unwrap_or_default();
-    upgrade.on_upgrade(move |socket| stream(socket, shared.hub, epoch, seq))
+    upgrade
+        .protocols([PROTOCOL])
+        .on_upgrade(move |socket| stream(socket, shared.hub, epoch, seq))
 }
 
 async fn send(socket: &mut WebSocket, frame: &Frame) -> bool {
@@ -237,18 +246,23 @@ fn content_type(path: &Path) -> &'static str {
 
 fn contained(root: &Path, requested: &str) -> Option<PathBuf> {
     let relative = Path::new(requested.trim_start_matches('/'));
-    if relative
-        .components()
-        .any(|component| !matches!(component, Component::Normal(_)))
+    if requested.contains('\\')
+        || relative
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
     {
         return None;
     }
-    let path = root.join(relative);
-    Some(if path.is_dir() {
-        path.join("index.html")
+    let joined = root.join(relative);
+    let path = if joined.is_dir() {
+        joined.join("index.html")
     } else {
-        path
-    })
+        joined
+    };
+    let resolved = path.canonicalize().ok()?;
+    resolved
+        .starts_with(root.canonicalize().ok()?)
+        .then_some(resolved)
 }
 
 async fn ui(State(shared): State<Shared>, uri: Uri) -> Response {

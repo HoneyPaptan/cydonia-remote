@@ -7,7 +7,7 @@ use cydonia_remote::{
     proto::{Action, Command, Frame, Outcome, Reason, Snapshot},
     server::{self, Config},
 };
-use futures::{SinkExt as _, StreamExt as _, channel::mpsc};
+use futures::{StreamExt as _, channel::mpsc};
 use std::{
     net::SocketAddr,
     sync::{
@@ -16,7 +16,7 @@ use std::{
     },
     time::Duration,
 };
-use tokio_tungstenite::tungstenite::{self, Message};
+use tokio_tungstenite::tungstenite::{self, Message, client::IntoClientRequest as _};
 
 const TOKEN: &str = "s3cret-token";
 const STANDING_REQUEST: u64 = 7;
@@ -28,6 +28,10 @@ struct Running {
 }
 
 async fn start() -> Running {
+    start_serving(None).await
+}
+
+async fn start_serving(ui: Option<std::path::PathBuf>) -> Running {
     let hub = Hub::new(99);
     let (dispatch, mut actions) = mpsc::unbounded();
     let prompts = Arc::new(AtomicUsize::new(0));
@@ -53,7 +57,7 @@ async fn start() -> Running {
     let router = server::router(
         Config {
             token: TOKEN.into(),
-            ui: None,
+            ui,
         },
         hub.clone(),
         dispatch,
@@ -113,9 +117,30 @@ async fn snapshot(address: SocketAddr) -> Snapshot {
 type Socket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
+async fn connect(
+    address: SocketAddr,
+    query: &str,
+    protocols: &str,
+) -> Result<Socket, tungstenite::Error> {
+    let mut request = format!("ws://{address}/v1/events{query}")
+        .into_client_request()
+        .unwrap();
+    request
+        .headers_mut()
+        .insert("Sec-WebSocket-Protocol", protocols.parse().unwrap());
+    tokio_tungstenite::connect_async(request)
+        .await
+        .map(|(socket, _)| socket)
+}
+
 async fn subscribe(address: SocketAddr, epoch: u64, seq: u64) -> Socket {
-    let url = format!("ws://{address}/v1/events?epoch={epoch}&seq={seq}&token={TOKEN}");
-    tokio_tungstenite::connect_async(url).await.unwrap().0
+    connect(
+        address,
+        &format!("?epoch={epoch}&seq={seq}"),
+        &format!("cydonia, {TOKEN}"),
+    )
+    .await
+    .unwrap()
 }
 
 async fn next_frame(socket: &mut Socket) -> Option<Frame> {
@@ -292,4 +317,42 @@ async fn live_events_arrive_in_order_while_streaming() {
     ];
     assert_eq!(seqs, [1, 2, 3]);
     socket.close(None).await.unwrap();
+}
+
+fn ui_dir(name: &str) -> std::path::PathBuf {
+    let base = std::env::temp_dir().join(format!("cydonia-ui-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let ui = base.join("ui");
+    std::fs::create_dir_all(&ui).unwrap();
+    std::fs::write(ui.join("index.html"), "<main>cydonia</main>").unwrap();
+    std::fs::write(base.join("secret.txt"), "outside").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(base.join("secret.txt"), ui.join("escape.txt")).unwrap();
+    ui
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_ui_is_served_without_a_token() {
+    let running = start_serving(Some(ui_dir("index"))).await;
+    assert_eq!(
+        get(running.address, "/", None).await.unwrap(),
+        "<main>cydonia</main>"
+    );
+    assert_eq!(
+        get(running.address, "/index.html", None).await.unwrap(),
+        "<main>cydonia</main>"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn nothing_outside_the_ui_directory_is_served() {
+    let running = start_serving(Some(ui_dir("escape"))).await;
+    for path in [
+        "/../secret.txt",
+        "/%2e%2e/secret.txt",
+        "/escape.txt",
+        "/..%2fsecret.txt",
+    ] {
+        assert_eq!(get(running.address, path, None).await, Err(404), "{path}");
+    }
 }

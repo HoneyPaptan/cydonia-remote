@@ -9,10 +9,14 @@ use cydonia_remote::proto::{
 pub fn header(status: Status) -> SessionHeader {
     SessionHeader {
         agent: "Claude Code".into(),
+        number: Some(1),
         title: "Remote protocol".into(),
         name: None,
+        updated: 1_790_000_000,
         status,
         closed: false,
+        fork: None,
+        sent_at: Default::default(),
         plan: Vec::new(),
         permission: None,
         queued: 0,

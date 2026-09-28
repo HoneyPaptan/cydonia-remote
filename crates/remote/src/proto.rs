@@ -1,4 +1,7 @@
-use artifact::session::chat::{ChatItem, PlanStatus};
+use artifact::session::{
+    chat::{ChatItem, PlanStatus},
+    record::ForkOrigin,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -40,10 +43,14 @@ pub struct SessionView {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SessionHeader {
     pub agent: String,
+    pub number: Option<u64>,
     pub title: String,
     pub name: Option<String>,
+    pub updated: u64,
     pub status: Status,
     pub closed: bool,
+    pub fork: Option<ForkOrigin>,
+    pub sent_at: BTreeMap<usize, u64>,
     pub plan: Vec<(String, PlanStatus)>,
     pub permission: Option<PermissionView>,
     pub queued: usize,
