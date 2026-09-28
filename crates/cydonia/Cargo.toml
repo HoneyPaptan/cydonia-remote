@@ -27,3 +27,8 @@ image = { version = "0.25", default-features = false, features = ["ico", "png"] 
 [features]
 # Lists the Developer section in settings — see `cydonia-gui`.
 developer = ["gui/developer"]
+
+[dev-dependencies]
+remote.workspace = true
+serde_json.workspace = true
+ureq.workspace = true

@@ -2396,8 +2396,11 @@ dependencies = [
  "anyhow",
  "bezel",
  "cydonia-gui",
+ "cydonia-remote",
  "embed-resource",
  "image",
+ "serde_json",
+ "ureq",
 ]
 
 [[package]]
