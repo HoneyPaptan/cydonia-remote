@@ -628,6 +628,7 @@ impl Cydonia {
                 Some(Fade::new(Painter::of(cx), "toggle-sidebar")),
             )
             .id("toggle-sidebar")
+            .debug_selector(|| "toggle-sidebar".into())
             .flex_none()
             .tooltip(move |window, cx| Tooltip::text(label, window, cx))
             .on_click(cx.listener(|this, _, _, cx| this.toggle_sidebar(cx)))

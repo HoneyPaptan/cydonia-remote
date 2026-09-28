@@ -182,3 +182,55 @@ fn a_real_tap_on_an_entry_in_the_drawer_closes_it(cx: &mut gpui::TestAppContext)
     tap("article-row-0-1", visual);
     assert!(!root.read_with(visual, |root, _| root.sidebar_open));
 }
+
+fn touch_tap(selector: &'static str, id: u64, visual: &mut gpui::VisualTestContext) {
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    let position = visual
+        .debug_bounds(selector)
+        .unwrap_or_else(|| panic!("{selector} is on screen"))
+        .center();
+    touch_tap_at(position, id, visual);
+}
+
+fn touch_tap_at(position: gpui::Point<gpui::Pixels>, id: u64, visual: &mut gpui::VisualTestContext) {
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    let touch = |phase| {
+        gpui::PlatformInput::Touch(gpui::TouchEvent {
+            id: gpui::TouchId(id),
+            phase,
+            position,
+            predicted_position: None,
+            force: None,
+        })
+    };
+    visual.update(|window, cx| {
+        window.dispatch_event(touch(gpui::TouchPhase::Started), cx);
+        window.dispatch_event(touch(gpui::TouchPhase::Ended), cx);
+    });
+}
+
+#[gpui::test]
+fn taps_keep_working_after_one_opens_an_entry(cx: &mut gpui::TestAppContext) {
+    let scratch = Scratch::new("touch");
+    let (root, visual) = open_at_width(390., &scratch, cx);
+    root.update(visual, |root, cx| {
+        root.workspace.update(cx, |workspace, cx| workspace.new_article(cx));
+    });
+
+    touch_tap("article-row-0-1", 1, visual);
+    assert!(!root.read_with(visual, |root, _| root.sidebar_open), "first tap closes");
+    touch_tap("toggle-sidebar", 2, visual);
+    assert!(root.read_with(visual, |root, _| root.sidebar_open), "second tap reopens");
+    touch_tap("article-row-0-0", 3, visual);
+    assert!(!root.read_with(visual, |root, _| root.sidebar_open), "third tap closes");
+}
+
+#[gpui::test]
+fn taps_keep_working_after_a_tap_on_the_drawer_corner(cx: &mut gpui::TestAppContext) {
+    let scratch = Scratch::new("corner");
+    let (root, visual) = open_at_width(390., &scratch, cx);
+
+    touch_tap_at(gpui::point(px(27.), px(18.)), 1, visual);
+    touch_tap("article-row-0-0", 2, visual);
+    assert!(!root.read_with(visual, |root, _| root.sidebar_open), "the row still answers");
+}

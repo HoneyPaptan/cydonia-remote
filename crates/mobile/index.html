@@ -49,6 +49,12 @@
 	</head>
 	<body>
 		<p id="boot">Connecting to Cydonia</p>
+		<script>
+			function keepLiftedFingersFromLeavingTheCanvas(event) {
+				if (event.pointerType === 'touch') event.stopImmediatePropagation();
+			}
+			window.addEventListener('pointerleave', keepLiftedFingersFromLeavingTheCanvas, true);
+		</script>
 		<script type="module">
 			import init from './cydonia_mobile.js';
 
