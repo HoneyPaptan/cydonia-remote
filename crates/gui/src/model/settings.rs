@@ -613,10 +613,14 @@ pub fn dir() -> Result<PathBuf> {
 /// the integration binaries — they link this crate compiled without `cfg(test)`
 /// and see none of it otherwise.
 fn home() -> Result<PathBuf> {
-    if cfg!(test) || std::env::var_os("NEXTEST").is_some() {
+    if under_test() {
         return Ok(std::env::temp_dir().join(format!("cydonia-test-home-{}", std::process::id())));
     }
     dirs::home_dir().context("no home directory on this system")
+}
+
+pub(crate) fn under_test() -> bool {
+    cfg!(test) || std::env::var_os("NEXTEST").is_some()
 }
 
 /// `~/.config/cydonia/settings.toml`.

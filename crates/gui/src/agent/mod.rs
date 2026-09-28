@@ -43,6 +43,9 @@ pub fn cache_dir() -> Option<PathBuf> {
 /// thread. An empty map is the honest answer offline — every caller falls
 /// back to what it drew before.
 pub fn icons(configured: &[settings::Agent]) -> HashMap<String, Icon> {
+    if settings::under_test() {
+        return HashMap::new();
+    }
     let Some(cache) = cache_dir() else {
         return HashMap::new();
     };
