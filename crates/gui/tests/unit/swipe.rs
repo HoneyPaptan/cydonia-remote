@@ -101,6 +101,15 @@ fn a_vertical_or_short_pan_opens_nothing(cx: &mut gpui::TestAppContext) {
     let (root, mut visual) = open_phone(&scratch, cx);
 
     pan(0., 300., &mut visual);
-    pan(40., 0., &mut visual);
+    pan(12., 0., &mut visual);
     assert_eq!(open(&root, &mut visual), (false, false));
+}
+
+#[gpui::test]
+fn a_quick_short_flick_still_opens_the_sidebar(cx: &mut gpui::TestAppContext) {
+    let scratch = Scratch::new("flick");
+    let (root, mut visual) = open_phone(&scratch, cx);
+
+    pan(24., 0., &mut visual);
+    assert_eq!(open(&root, &mut visual), (true, false));
 }

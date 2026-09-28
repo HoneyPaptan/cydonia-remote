@@ -3,7 +3,8 @@ use bezel::gpui::{
     self, Context, DispatchPhase, IntoElement, ScrollWheelEvent, Styled, TouchPhase, Window,
 };
 
-const SWIPE_DISTANCE: f32 = 64.;
+const SWIPE_DISTANCE: f32 = 40.;
+const FLICK_DISTANCE: f32 = 16.;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Swipe {
@@ -51,8 +52,13 @@ impl Cydonia {
                 self.swipe = Some(Swipe::Following(far + across));
             }
             (TouchPhase::Moved, Some(Swipe::Spent)) => {}
-            (TouchPhase::Ended | TouchPhase::Cancelled, Some(_)) => {
+            (TouchPhase::Ended | TouchPhase::Cancelled, Some(swipe)) => {
                 self.swipe = None;
+                if let Swipe::Following(far) = swipe
+                    && far.abs() >= FLICK_DISTANCE
+                {
+                    self.turn(far, window, cx);
+                }
                 return true;
             }
             _ => return false,
@@ -69,6 +75,10 @@ impl Cydonia {
             return;
         }
         self.swipe = Some(Swipe::Spent);
+        self.turn(far, window, cx);
+    }
+
+    fn turn(&mut self, far: f32, window: &mut Window, cx: &mut Context<Self>) {
         match far > 0. {
             true => self.swipe_right(cx),
             false => self.swipe_left(window, cx),
