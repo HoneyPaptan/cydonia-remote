@@ -24,6 +24,7 @@ pub mod settings;
 pub mod sink;
 pub mod spaces;
 pub mod state;
+pub mod switches;
 pub mod store;
 #[cfg(feature = "desktop")]
 pub mod update;

@@ -450,7 +450,7 @@ impl Feature {
 
     /// The key it is written under, inside `[features]` or, for the panel's
     /// tabs, `[features.panel]` — see [`Feature::in_panel`].
-    fn key(self) -> &'static str {
+    pub(crate) fn key(self) -> &'static str {
         match self {
             Self::Sessions => "sessions",
             Self::Boards => "boards",

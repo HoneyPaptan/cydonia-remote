@@ -201,6 +201,13 @@ impl Sink for Commands {
         });
     }
 
+    fn switch(&self, key: &str, on: bool) {
+        self.deliver(Action::SetSwitch {
+            key: key.to_owned(),
+            on,
+        });
+    }
+
     fn session(&self, project: &Path, record: &str, change: SessionChange) {
         let key = key(project, record);
         self.deliver(match change {

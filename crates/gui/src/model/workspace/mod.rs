@@ -19,6 +19,7 @@ use crate::{
         project::Project,
         session::ChatSession,
         settings::{self, Feature, Settings},
+        switches::{Door, Switch},
         state::{self, State},
         watch::{self, Watch},
     },
@@ -434,7 +435,17 @@ impl Workspace {
         // `sessions` is half of what decides whether the door is open: the
         // only caller is an agent, and that switch is whether any run.
         self.refresh_door();
+        relay_switch(Switch::Feature(feature), on);
         cx.notify();
+    }
+
+    pub fn set_switch(&mut self, switch: Switch, on: bool, cx: &mut Context<Self>) {
+        match switch {
+            Switch::Feature(feature) => self.set_feature(feature, on, cx),
+            Switch::Mcp(Door::Serve) => self.set_mcp_serve(on, cx),
+            Switch::Mcp(Door::Write) => self.set_mcp_write(on, cx),
+            Switch::Mcp(Door::Delete) => self.set_mcp_delete(on, cx),
+        }
     }
 
     /// Move a command's chord, or take it back to its default.
@@ -478,6 +489,7 @@ impl Workspace {
         }
         self.settings.mcp.serve = on;
         self.refresh_door();
+        relay_switch(Switch::Mcp(Door::Serve), on);
         cx.notify();
     }
 
@@ -489,6 +501,7 @@ impl Workspace {
         }
         self.settings.mcp.write = on;
         self.refresh_door();
+        relay_switch(Switch::Mcp(Door::Write), on);
         cx.notify();
     }
 
@@ -499,6 +512,7 @@ impl Workspace {
         }
         self.settings.mcp.delete = on;
         self.refresh_door();
+        relay_switch(Switch::Mcp(Door::Delete), on);
         cx.notify();
     }
 
@@ -507,7 +521,7 @@ impl Workspace {
         #[cfg(feature = "desktop")]
         return agent::serve::url();
         #[cfg(not(feature = "desktop"))]
-        None
+        super::switches::laptop_mcp_url()
     }
 
     // ── releases ─────────────────────────────────────────────────
@@ -809,4 +823,10 @@ pub fn apply_transparency(opaque: Option<bool>, cx: &mut App) {
         },
         cx,
     );
+}
+
+fn relay_switch(switch: Switch, on: bool) {
+    if let Some(sink) = super::sink::get() {
+        sink.switch(&switch.key(), on);
+    }
 }

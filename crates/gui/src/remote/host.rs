@@ -2,7 +2,7 @@ use super::{route, view};
 use crate::model::{
     project::Project,
     session::ChatSession,
-    settings,
+    settings, switches,
     workspace::{Reloaded, Workspace},
 };
 use anyhow::Result;
@@ -12,7 +12,7 @@ use futures::{StreamExt as _, channel::mpsc};
 use remote::{
     hub::Hub,
     mirror::Mirror,
-    proto::{File, ProjectView},
+    proto::{File, ProjectView, Setup},
     server::{self, Config},
 };
 use std::{
@@ -103,11 +103,17 @@ impl Publisher {
         Mirror {
             agents: agents.iter().map(|agent| agent.name.clone()).collect(),
             projects,
+            setup: Setup::default(),
         }
     }
 
     fn publish(&mut self, workspace: &Workspace) {
-        let next = self.mirror(&workspace.projects, &workspace.settings.agents);
+        let mut next = self.mirror(&workspace.projects, &workspace.settings.agents);
+        next.setup = switches::setup(
+            &workspace.settings.features,
+            &workspace.settings.mcp,
+            workspace.mcp_url(),
+        );
         self.hub.publish(next);
     }
 }

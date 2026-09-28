@@ -20,6 +20,7 @@ impl Scratch {
         hub.publish(Mirror {
             agents: Vec::new(),
             projects: vec![ProjectView::new(self.0.join("project").to_string_lossy())],
+            ..Mirror::default()
         });
         Laptop::new(hub)
     }

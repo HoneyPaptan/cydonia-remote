@@ -15,6 +15,14 @@ pub struct Snapshot {
     pub seq: u64,
     pub agents: Vec<String>,
     pub projects: Vec<ProjectView>,
+    #[serde(default)]
+    pub setup: Setup,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Setup {
+    pub switches: BTreeMap<String, bool>,
+    pub mcp_url: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -109,6 +117,9 @@ pub struct Event {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Change {
+    Setup {
+        setup: Setup,
+    },
     Agents {
         agents: Vec<String>,
     },
@@ -265,6 +276,10 @@ pub enum Action {
     },
     CloseProject {
         path: String,
+    },
+    SetSwitch {
+        key: String,
+        on: bool,
     },
 }
 

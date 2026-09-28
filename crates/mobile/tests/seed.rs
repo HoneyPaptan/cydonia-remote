@@ -62,6 +62,7 @@ fn settings_name_every_agent_the_laptop_knows_or_used() {
         seq: 0,
         agents: vec!["Codex".into()],
         projects: vec![project()],
+        setup: Default::default(),
     };
     let names: Vec<String> = seed::settings(&snapshot)
         .agents

@@ -165,6 +165,7 @@ fn mirror_with(items: Vec<artifact::session::chat::ChatItem>) -> Mirror {
     Mirror {
         agents: Vec::new(),
         projects: vec![project("/p", &[("s", session(items))])],
+        ..Mirror::default()
     }
 }
 

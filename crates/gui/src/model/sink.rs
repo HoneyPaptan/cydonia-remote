@@ -30,6 +30,7 @@ pub trait Sink {
     fn session(&self, project: &Path, record: &str, change: SessionChange);
     fn agent(&self, id: &str, install: bool);
     fn project(&self, path: &Path, open: bool);
+    fn switch(&self, key: &str, on: bool);
 }
 
 thread_local! {

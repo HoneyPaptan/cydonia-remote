@@ -3,6 +3,7 @@ use crate::model::{
     project::Project,
     session::ChatSession,
     store::{self, Store},
+    switches::Switch,
     workspace::Workspace,
 };
 use anyhow::Result;
@@ -275,6 +276,13 @@ pub fn route(workspace: &mut Workspace, action: Action, cx: &mut Context<Workspa
                 return rejected(Reason::UnknownProject);
             };
             workspace.close_project(ix, cx);
+            Outcome::Accepted
+        }
+        Action::SetSwitch { key, on } => {
+            let Some(switch) = Switch::parse(&key) else {
+                return rejected(Reason::Invalid);
+            };
+            workspace.set_switch(switch, on, cx);
             Outcome::Accepted
         }
         Action::RemoveSession { key } => {

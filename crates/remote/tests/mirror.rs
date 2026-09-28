@@ -18,6 +18,7 @@ fn mirror(projects: Vec<cydonia_remote::proto::ProjectView>) -> Mirror {
     Mirror {
         agents: vec!["Claude Code".into()],
         projects,
+        ..Mirror::default()
     }
 }
 
@@ -176,6 +177,9 @@ fn random_mirror(rng: &mut Rng) -> Mirror {
     let mut held = mirror(projects);
     if rng.next(3) == 0 {
         held.agents.push("Codex".into());
+    }
+    if rng.next(2) == 0 {
+        held.setup.switches.insert("mcp.serve".into(), rng.next(2) == 0);
     }
     held
 }

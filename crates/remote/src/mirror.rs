@@ -1,10 +1,11 @@
-use crate::proto::{Change, ProjectView, SessionKey, SessionView, Snapshot, VERSION};
+use crate::proto::{Change, ProjectView, SessionKey, SessionView, Setup, Snapshot, VERSION};
 use artifact::session::chat::ChatItem;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Mirror {
     pub agents: Vec<String>,
     pub projects: Vec<ProjectView>,
+    pub setup: Setup,
 }
 
 impl Mirror {
@@ -12,6 +13,7 @@ impl Mirror {
         Self {
             agents: snapshot.agents,
             projects: snapshot.projects,
+            setup: snapshot.setup,
         }
     }
 
@@ -22,6 +24,7 @@ impl Mirror {
             seq,
             agents: self.agents.clone(),
             projects: self.projects.clone(),
+            setup: self.setup.clone(),
         }
     }
 
@@ -47,6 +50,7 @@ impl Mirror {
 
     pub fn apply(&mut self, change: &Change) {
         match change {
+            Change::Setup { setup } => self.setup = setup.clone(),
             Change::Agents { agents } => self.agents = agents.clone(),
             Change::ProjectPut { project } => match self.project_mut(&project.path) {
                 Some(held) => *held = project.clone(),
@@ -102,6 +106,11 @@ impl Mirror {
 
     pub fn diff(&self, next: &Mirror) -> Vec<Change> {
         let mut changes = Vec::new();
+        if self.setup != next.setup {
+            changes.push(Change::Setup {
+                setup: next.setup.clone(),
+            });
+        }
         if self.agents != next.agents {
             changes.push(Change::Agents {
                 agents: next.agents.clone(),

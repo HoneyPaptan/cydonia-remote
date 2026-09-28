@@ -22,6 +22,7 @@ impl Sink for Recorder {
     fn session(&self, _: &Path, _: &str, _: sink::SessionChange) {}
     fn agent(&self, _: &str, _: bool) {}
     fn project(&self, _: &Path, _: bool) {}
+    fn switch(&self, _: &str, _: bool) {}
     fn write(&self, project: &Path, write: Write) {
         let what = match write {
             Write::CreateBoard { name, .. } => format!("create board {name}"),

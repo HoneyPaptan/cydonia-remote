@@ -3,12 +3,14 @@ use artifact::project::Project as _;
 use bezel::gpui::Context;
 use gui::model::{
     session::{ChatSession, Choice, Connection, PermissionPrompt, Usage},
-    store,
+    store, switches,
     workspace::Workspace,
 };
 use remote::{
     mirror::{Mirror, apply_items},
-    proto::{Change, PermissionView, ProjectView, SessionHeader, SessionKey, SessionView, Status},
+    proto::{
+        Change, PermissionView, ProjectView, SessionHeader, SessionKey, SessionView, Setup, Status,
+    },
 };
 use std::{
     path::{Path, PathBuf},
@@ -134,7 +136,13 @@ fn close(workspace: &mut Workspace, path: &str, cx: &mut Context<Workspace>) {
     }
 }
 
+fn setup(workspace: &mut Workspace, setup: &Setup) {
+    let settings = &mut workspace.settings;
+    switches::adopt(setup, &mut settings.features, &mut settings.mcp);
+}
+
 pub fn everything(workspace: &mut Workspace, mirror: &Mirror, cx: &mut Context<Workspace>) {
+    setup(workspace, &mirror.setup);
     let open: Vec<String> = workspace
         .projects
         .iter()
@@ -158,6 +166,7 @@ pub fn change(
     cx: &mut Context<Workspace>,
 ) {
     match change {
+        Change::Setup { setup: held } => setup(workspace, held),
         Change::Agents { agents } => {
             workspace
                 .settings
