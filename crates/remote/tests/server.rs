@@ -357,3 +357,76 @@ async fn nothing_outside_the_ui_directory_is_served() {
         assert_eq!(get(running.address, path, None).await, Err(404), "{path}");
     }
 }
+
+struct Raw {
+    head: String,
+    body: Vec<u8>,
+}
+
+impl Raw {
+    fn header(&self, name: &str) -> Option<&str> {
+        self.head.lines().find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            key.eq_ignore_ascii_case(name).then(|| value.trim())
+        })
+    }
+}
+
+async fn raw_get(address: SocketAddr, path: &str, extra: &[(&str, &str)]) -> Raw {
+    let mut request = format!("GET {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n");
+    for (name, value) in extra {
+        request.push_str(&format!("{name}: {value}\r\n"));
+    }
+    request.push_str("\r\n");
+    tokio::task::spawn_blocking(move || {
+        use std::io::{Read as _, Write as _};
+        let mut stream = std::net::TcpStream::connect(address).unwrap();
+        stream.write_all(request.as_bytes()).unwrap();
+        let mut answer = Vec::new();
+        stream.read_to_end(&mut answer).unwrap();
+        let split = answer
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .unwrap();
+        Raw {
+            head: String::from_utf8(answer[..split].to_vec()).unwrap(),
+            body: answer[split + 4..].to_vec(),
+        }
+    })
+    .await
+    .unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unchanged_ui_file_answers_not_modified() {
+    let running = start_serving(Some(ui_dir("tag"))).await;
+    let first = raw_get(running.address, "/index.html", &[]).await;
+    assert!(first.head.starts_with("HTTP/1.1 200"), "{}", first.head);
+    let tag = first.header("etag").expect("a version tag").to_owned();
+    let second = raw_get(running.address, "/index.html", &[("If-None-Match", &tag)]).await;
+    assert!(second.head.starts_with("HTTP/1.1 304"), "{}", second.head);
+    assert!(second.body.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_precompressed_file_is_sent_to_clients_that_accept_gzip() {
+    let ui = ui_dir("gzip");
+    std::fs::write(ui.join("app.wasm"), b"plain").unwrap();
+    std::fs::write(ui.join("app.wasm.gz"), b"squeezed").unwrap();
+    let running = start_serving(Some(ui)).await;
+
+    let packed = raw_get(
+        running.address,
+        "/app.wasm",
+        &[("Accept-Encoding", "br, gzip")],
+    )
+    .await;
+    assert_eq!(packed.body, b"squeezed");
+    assert_eq!(packed.header("content-encoding"), Some("gzip"));
+    assert_eq!(packed.header("content-type"), Some("application/wasm"));
+
+    let plain = raw_get(running.address, "/app.wasm", &[]).await;
+    assert_eq!(plain.body, b"plain");
+    assert_eq!(plain.header("content-encoding"), None);
+    assert_ne!(plain.header("etag"), packed.header("etag"));
+}

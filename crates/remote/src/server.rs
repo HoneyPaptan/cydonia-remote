@@ -11,7 +11,7 @@ use axum::{
         Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    http::{HeaderMap, StatusCode, Uri, header},
+    http::{HeaderMap, HeaderValue, StatusCode, Uri, header},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
@@ -22,6 +22,7 @@ use std::{
     net::SocketAddr,
     path::{Component, Path, PathBuf},
     sync::Arc,
+    time::UNIX_EPOCH,
 };
 use tokio::{net::TcpListener, sync::broadcast::error::RecvError};
 
@@ -265,22 +266,73 @@ fn contained(root: &Path, requested: &str) -> Option<PathBuf> {
         .then_some(resolved)
 }
 
-async fn ui(State(shared): State<Shared>, uri: Uri) -> Response {
+fn accepts_gzip(headers: &HeaderMap) -> bool {
+    headers
+        .get_all(header::ACCEPT_ENCODING)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','))
+        .any(|coding| {
+            coding
+                .split(';')
+                .next()
+                .is_some_and(|name| name.trim() == "gzip")
+        })
+}
+
+fn version_tag(metadata: &std::fs::Metadata, gzip: bool) -> String {
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map_or(0, |elapsed| elapsed.as_nanos());
+    let variant = if gzip { "-gz" } else { "" };
+    format!("\"{:x}-{modified:x}{variant}\"", metadata.len())
+}
+
+fn unchanged(headers: &HeaderMap, tag: &str) -> bool {
+    headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.split(',').any(|candidate| candidate.trim() == tag))
+}
+
+async fn ui(State(shared): State<Shared>, uri: Uri, headers: HeaderMap) -> Response {
     let Some(root) = shared.ui.as_deref() else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let Some(path) = contained(root, uri.path()) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    match tokio::fs::read(&path).await {
-        Ok(bytes) => (
-            [
-                (header::CONTENT_TYPE, content_type(&path)),
-                (header::CACHE_CONTROL, "no-cache"),
-            ],
-            Body::from(bytes),
-        )
-            .into_response(),
-        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    let compressed = accepts_gzip(&headers)
+        .then(|| contained(root, &format!("{}.gz", uri.path())))
+        .flatten();
+    let gzip = compressed.is_some();
+    let file = compressed.unwrap_or_else(|| path.clone());
+    let Ok(metadata) = tokio::fs::metadata(&file).await else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let tag = version_tag(&metadata, gzip);
+    let mut response = if unchanged(&headers, &tag) {
+        StatusCode::NOT_MODIFIED.into_response()
+    } else {
+        match tokio::fs::read(&file).await {
+            Ok(bytes) => Body::from(bytes).into_response(),
+            Err(_) => return StatusCode::NOT_FOUND.into_response(),
+        }
+    };
+    let answer = response.headers_mut();
+    answer.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static(content_type(&path)),
+    );
+    answer.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    answer.insert(header::VARY, HeaderValue::from_static("accept-encoding"));
+    if let Ok(tag) = HeaderValue::from_str(&tag) {
+        answer.insert(header::ETAG, tag);
     }
+    if gzip {
+        answer.insert(header::CONTENT_ENCODING, HeaderValue::from_static("gzip"));
+    }
+    response
 }
