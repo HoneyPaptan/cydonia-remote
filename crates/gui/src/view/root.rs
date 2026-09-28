@@ -435,6 +435,8 @@ pub struct Cydonia {
     pub(crate) sidebar_width: f32,
     pub(crate) drawer_front: Option<Front>,
     pub(crate) swipe: Option<super::swipe::Swipe>,
+    pub(crate) press: Option<super::swipe::Press>,
+    pub(crate) quick: bool,
     /// The window's bottom panel: its shell, and whether it is up.
     ///
     /// One to a window, like the sidebar and the right panel — every pane and
@@ -1010,6 +1012,8 @@ impl Cydonia {
             sidebar_width: SIDEBAR_WIDTH,
             drawer_front: None,
             swipe: None,
+            press: None,
+            quick: false,
             #[cfg(feature = "desktop")]
             terminal: None,
             changes_open: false,
@@ -1642,6 +1646,7 @@ impl Cydonia {
 
 impl Render for Cydonia {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        bezel::ui::touch::forget();
         self.sync_leaves(window, cx);
         self.sync_changes(window, cx);
         self.publish_shown(cx);
@@ -1731,6 +1736,7 @@ impl Render for Cydonia {
             // is answerable while it is asking.
             .children(self.confirm_delete(cx))
             .children(self.search_palette(cx))
+            .children(self.quick_actions(window, cx))
             .children(self.settings_sheet(window, cx))
             .children(self.desktop_only_notice(cx))
             .children(self.new_board_dialog(cx));

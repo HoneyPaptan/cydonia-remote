@@ -114,6 +114,7 @@ impl Editor {
             .text_color(theme.text_faint)
             .hover(|el| el.bg(theme.element_hover).text_color(theme.text_muted))
             .child("⠿")
+            .child(ui::touch::grip())
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, _: &gpui::MouseDownEvent, _, cx| {

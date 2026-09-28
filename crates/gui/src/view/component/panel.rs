@@ -51,7 +51,7 @@ impl gpui::EventEmitter<OpenFeatures> for Panel {}
 
 /// What the launch view and the `+` menu offer.
 #[derive(Clone, Copy)]
-enum Launch {
+pub(crate) enum Launch {
     Review,
     Terminal,
     Browser,
@@ -59,7 +59,9 @@ enum Launch {
 }
 
 impl Launch {
-    fn label(self) -> &'static str {
+    pub(crate) const ALL: [Self; 4] = [Self::Review, Self::Terminal, Self::Browser, Self::Files];
+
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Review => "Review",
             Self::Terminal => "Terminal",
@@ -68,7 +70,7 @@ impl Launch {
         }
     }
 
-    fn icon(self) -> &'static [u8] {
+    pub(crate) fn icon(self) -> &'static [u8] {
         match self {
             Self::Review => icons::development::GitCompare,
             Self::Terminal => icons::development::Terminal,
@@ -943,6 +945,18 @@ impl Cydonia {
         self.sync_changes(window, cx);
         if let Some(panel) = self.changes.clone() {
             panel.update(cx, |panel, cx| panel.files(window, cx));
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn launch_tool(&mut self, launch: Launch, window: &mut Window, cx: &mut Context<Self>) {
+        self.set_changes_open(true, cx);
+        self.sync_changes(window, cx);
+        if let Some(panel) = self.changes.clone() {
+            panel.update(cx, |panel, cx| {
+                panel.restore_tabs(window, cx);
+                panel.choose(launch, window, cx);
+            });
         }
         cx.notify();
     }

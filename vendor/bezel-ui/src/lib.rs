@@ -42,6 +42,7 @@ pub mod table;
 pub mod tabs;
 pub mod titlebar;
 pub mod tooltip;
+pub mod touch;
 pub mod tree;
 pub mod widgets;
 pub mod window;

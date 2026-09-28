@@ -21,6 +21,7 @@ pub mod keymap;
 pub mod leaf;
 pub mod menubar;
 pub mod root;
+pub mod quick;
 pub mod search;
 pub mod section;
 pub mod settings;

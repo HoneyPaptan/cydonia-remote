@@ -28,6 +28,7 @@ pub fn strip(
         .min_w_0()
         .flex()
         .child(bar.track_scroll(&handle))
+        .child(bezel::ui::touch::sideways())
         .child(scrollbars::Overlay::new(
             SharedString::from(format!("strip-bar-{key}")),
             &handle,

@@ -50,6 +50,9 @@ impl Cydonia {
             }
             return true;
         }
+        if self.quick {
+            return self.close_quick_actions(cx);
+        }
         if self.search.open {
             self.dismiss_search(&DismissSearch, window, cx);
             return true;

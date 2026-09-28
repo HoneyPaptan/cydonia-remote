@@ -2313,6 +2313,7 @@ impl Cydonia {
         div()
             .size_full()
             .relative()
+            .child(bezel::ui::touch::sideways())
             .child(
                 // Clipped rather than scrolled: the wheel handler below is the
                 // only writer of `across`. A scrolling pane runs its own axis
