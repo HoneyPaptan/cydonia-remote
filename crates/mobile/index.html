@@ -67,7 +67,70 @@
 					});
 				}
 			}
-			if (matchMedia('(pointer: coarse)').matches) scaleTheInterface(1.25);
+			const coarse = matchMedia('(pointer: coarse)').matches;
+			const scale = coarse ? 1.25 : 1;
+			if (coarse) scaleTheInterface(scale);
+
+			const TOUCH_SLOP = 8;
+			const HEADER_BAND = 72;
+			const MOMENTUM_WINDOW = 3000;
+			let touch = null;
+			let lastPan = { horizontal: false, at: -Infinity };
+
+			function stopLeftoverMomentum(target, event) {
+				for (const type of ['pointerdown', 'pointercancel']) {
+					const stopper = new PointerEvent(type, {
+						pointerId: 0x7fff,
+						pointerType: 'touch',
+						clientX: event.clientX * scale,
+						clientY: event.clientY * scale,
+						bubbles: true,
+						cancelable: true,
+					});
+					stopper.cydoniaStopper = true;
+					target.dispatchEvent(stopper);
+				}
+			}
+
+			function momentumHasNothingToMove(event) {
+				if (performance.now() - lastPan.at > MOMENTUM_WINDOW) return false;
+				return lastPan.horizontal || event.clientY < HEADER_BAND;
+			}
+
+			window.addEventListener(
+				'pointerdown',
+				(event) => {
+					if (event.pointerType !== 'touch' || event.cydoniaStopper) return;
+					if (momentumHasNothingToMove(event)) {
+						lastPan.at = -Infinity;
+						stopLeftoverMomentum(event.target, event);
+					}
+					touch = { x: event.clientX, y: event.clientY, panned: false, horizontal: false };
+				},
+				true,
+			);
+			window.addEventListener(
+				'pointermove',
+				(event) => {
+					if (event.pointerType !== 'touch' || !touch || event.cydoniaStopper) return;
+					const dx = event.clientX - touch.x;
+					const dy = event.clientY - touch.y;
+					if (!touch.panned && Math.hypot(dx, dy) > TOUCH_SLOP) {
+						touch.panned = true;
+						touch.horizontal = Math.abs(dx) > Math.abs(dy);
+					}
+				},
+				true,
+			);
+			window.addEventListener(
+				'pointerup',
+				(event) => {
+					if (event.pointerType !== 'touch' || !touch || event.cydoniaStopper) return;
+					if (touch.panned) lastPan = { horizontal: touch.horizontal, at: performance.now() };
+					touch = null;
+				},
+				true,
+			);
 		</script>
 		<script type="module">
 			import init, { cydoniaBack } from './cydonia_mobile.js';
