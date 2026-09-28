@@ -9,6 +9,7 @@ use crate::{
     model::{
         media::Attachment,
         pick,
+        pictures::Fit,
         session::{Command, Usage},
     },
     view::root,
@@ -17,7 +18,7 @@ use bezel::ui::scroll as scrollbars;
 use bezel::{
     gpui::{
         self, AnyElement, App, ClipboardEntry, Context, Entity, EventEmitter, ExternalPaths,
-        FocusHandle, Focusable, KeyBinding, ObjectFit, Render, ScrollHandle, SharedString, Window,
+        FocusHandle, Focusable, KeyBinding, Render, ScrollHandle, SharedString, Window,
         actions, div, img, prelude::*, px,
     },
     theme::{Glass, SurfaceStyle, TextStyle, Theme, Typeset},
@@ -73,12 +74,23 @@ const REMOVE: f32 = 14.;
 /// How much of the window an opened picture may take, either way.
 const PREVIEW_SHARE: f32 = 0.8;
 
-fn picture(attachment: &Attachment) -> Option<gpui::Img> {
+fn picture_source(attachment: &Attachment) -> Option<gpui::ImageSource> {
     match attachment {
-        Attachment::Bytes(image) => Some(img(image.clone())),
-        Attachment::File(path) if attachment.is_picture() => Some(img(path.clone())),
+        Attachment::Bytes(image) => Some(image.clone().into()),
+        Attachment::File(path) if attachment.is_picture() => Some(path.clone().into()),
         _ => None,
     }
+}
+
+fn picture(
+    attachment: &Attachment,
+    fit: Fit,
+    radius: f32,
+    shape: impl FnOnce(gpui::Img) -> gpui::Img,
+) -> Option<AnyElement> {
+    let source = picture_source(attachment)?;
+    let shown = shape(img(source.clone()).object_fit(fit.object()).rounded(px(radius)));
+    Some(crate::view::picture::framed(&source, fit, px(radius), shown))
 }
 
 fn document_face(theme: &Theme, ix: usize, name: String) -> gpui::Stateful<gpui::Div> {
@@ -632,7 +644,7 @@ impl Composer {
             return None;
         }
         let thumbs = self.attachments.iter().enumerate().map(|(ix, attachment)| {
-            let shown = picture(attachment);
+            let shown = picture(attachment, Fit::Cover, THUMB_RADIUS, |shown| shown.size_full());
             let width = match shown {
                 Some(_) => THUMB,
                 None => DOCUMENT_WIDTH,
@@ -648,12 +660,7 @@ impl Composer {
                         composer.preview = Some(ix);
                         cx.notify();
                     }))
-                    .child(
-                        picture
-                            .size_full()
-                            .rounded(px(THUMB_RADIUS))
-                            .object_fit(ObjectFit::Cover),
-                    ),
+                    .child(picture),
                 None => document_face(theme, ix, attachment.name()),
             };
             // Unclipped, so the remove button can sit on the corner: half on
@@ -681,6 +688,7 @@ impl Composer {
                         .absolute()
                         .top(px(-REMOVE / 2.))
                         .right(px(-REMOVE / 2.))
+                        .child(bezel::ui::cover::cover())
                         .tooltip(|window, cx| Tooltip::text("Remove attachment", window, cx))
                         .on_click(cx.listener(move |composer, _, _, cx| {
                             if ix < composer.attachments.len() {
@@ -1471,11 +1479,7 @@ impl Composer {
         let card = image_preview::frame(
             &theme,
             "composer-preview-close",
-            picture(attachment)?
-                .w(width)
-                .h(height)
-                .object_fit(ObjectFit::Contain)
-                .rounded(px(16.)),
+            picture(attachment, Fit::Contain, 16., |shown| shown.w(width).h(height))?,
             cx.listener(|composer, _, _, cx| {
                 composer.preview = None;
                 cx.notify();

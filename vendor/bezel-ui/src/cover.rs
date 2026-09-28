@@ -65,6 +65,21 @@ pub fn covered(mark: Mark, bounds: Bounds<Pixels>, window: &Window, cx: &App) ->
         })
 }
 
+/// The parts of `bounds` that covers recorded after `mark` in this frame lie
+/// over. Call it from paint.
+pub fn over(mark: Mark, bounds: Bounds<Pixels>, window: &Window, cx: &App) -> Vec<Bounds<Pixels>> {
+    cx.try_global::<Covers>()
+        .and_then(|covers| covers.0.get(&window.window_handle().window_id()))
+        .map(|frame| {
+            frame
+                .iter()
+                .filter(|(at, cover)| *at > mark && cover.intersects(&bounds))
+                .map(|(_, cover)| cover.intersect(&bounds))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn next() -> Mark {
     static NEXT: AtomicU64 = AtomicU64::new(1);
     Mark(NEXT.fetch_add(1, Ordering::Relaxed))

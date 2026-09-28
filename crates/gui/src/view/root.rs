@@ -1665,6 +1665,7 @@ impl Cydonia {
 impl Render for Cydonia {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         bezel::ui::touch::forget();
+        crate::model::pictures::frame();
         self.sync_leaves(window, cx);
         self.sync_changes(window, cx);
         self.publish_shown(cx);

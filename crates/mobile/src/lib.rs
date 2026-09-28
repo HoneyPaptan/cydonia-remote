@@ -14,3 +14,5 @@ mod fonts;
 mod hosts;
 #[cfg(target_family = "wasm")]
 mod pick;
+#[cfg(target_family = "wasm")]
+mod pictures;

@@ -96,6 +96,7 @@
 			}
 			const coarse = matchMedia('(pointer: coarse)').matches;
 			const scale = coarse ? 1.25 : 1;
+			window.cydoniaScale = scale;
 			if (coarse) scaleTheInterface(scale);
 
 			const TOUCH_SLOP = 8;

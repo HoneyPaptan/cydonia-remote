@@ -383,6 +383,7 @@ async fn boot() -> Result<(), String> {
             crate::laptop::install(endpoint.clone());
             crate::hosts::install();
             crate::pick::install();
+            crate::pictures::install();
             gui::model::sink::install(Rc::new(Commands {
                 endpoint: endpoint.clone(),
                 opening: opening.clone(),

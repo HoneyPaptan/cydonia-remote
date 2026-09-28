@@ -222,21 +222,22 @@ impl Preview {
                             .ml(px(self.drag))
                             .size_full();
                         let picture = img(source.clone()).object_fit(ObjectFit::Contain);
-                        if zoomed && index == self.selected {
-                            slide.child(
-                                picture
-                                    .absolute()
-                                    .left((size.width - width) / 2. + self.pan.x)
-                                    .top((size.height - tall) / 2. + self.pan.y)
-                                    .w(width)
-                                    .h(tall),
-                            )
+                        let picture = if zoomed && index == self.selected {
+                            picture
+                                .absolute()
+                                .left((size.width - width) / 2. + self.pan.x)
+                                .top((size.height - tall) / 2. + self.pan.y)
+                                .w(width)
+                                .h(tall)
                         } else {
-                            // Pinned to the slide's edges: under `size_full`
-                            // alone the height takes the picture's own ratio
-                            // and is cut.
-                            slide.child(picture.absolute().inset_0().size_full())
-                        }
+                            picture.absolute().inset_0().size_full()
+                        };
+                        slide.child(crate::view::picture::framed(
+                            source,
+                            crate::model::pictures::Fit::Contain,
+                            px(0.),
+                            picture,
+                        ))
                     }),
             )
             .child(

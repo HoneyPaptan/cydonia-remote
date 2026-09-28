@@ -601,14 +601,18 @@ impl Cydonia {
             .flex_none()
             .h(px(COVER_HEIGHT))
             .overflow_hidden()
-            .child(
-                img(self.cover_source(cover, cx))
-                    .size_full()
-                    .object_fit(ObjectFit::Cover)
-                    // Off gpui's own asset cache, which never lets a decoded
-                    // cover go. See [`crate::memory`].
-                    .image_cache(&memory::covers(cx)),
-            )
+            .child({
+                let source = self.cover_source(cover, cx);
+                crate::view::picture::framed(
+                    &source,
+                    crate::model::pictures::Fit::Cover,
+                    px(0.),
+                    img(source.clone())
+                        .size_full()
+                        .object_fit(ObjectFit::Cover)
+                        .image_cache(&memory::covers(cx)),
+                )
+            })
             .child(self.cover_controls(cx))
     }
 
@@ -688,6 +692,7 @@ impl Cydonia {
                 chip("cover-remove", "Remove")
                     .on_click(cx.listener(|this, _, _, cx| this.remove_cover(cx))),
             )
+            .child(bezel::ui::cover::cover())
     }
 
     /// One article in the sidebar, under the project that holds it.

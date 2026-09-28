@@ -154,16 +154,16 @@ impl Render for Gallery {
                                     .left(relative(index as f32 - self.selected as f32))
                                     .ml(px(self.drag))
                                     .size_full()
-                                    .child(
-                                        // Pinned to the slide's edges: under
-                                        // `size_full` alone the height takes
-                                        // the picture's own ratio and is cut.
+                                    .child(crate::view::picture::framed(
+                                        source,
+                                        crate::model::pictures::Fit::Contain,
+                                        px(0.),
                                         img(source.clone())
                                             .absolute()
                                             .inset_0()
                                             .size_full()
                                             .object_fit(ObjectFit::Contain),
-                                    )
+                                    ))
                             }),
                     )
                     .child(
