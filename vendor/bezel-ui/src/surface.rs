@@ -241,7 +241,14 @@ impl Element for Surface {
         if !lensed(theme) {
             let tint = self.tint.unwrap_or(glass.spec.tint);
             window.paint_quad(
-                fill(bounds, glass.spec.flat(tint).unwrap_or(tint)).corner_radii(corners),
+                fill(
+                    bounds,
+                    glass
+                        .spec
+                        .flat(tint)
+                        .unwrap_or_else(|| theme.surface_raised.opacity(1.0).blend(tint)),
+                )
+                .corner_radii(corners),
             );
         }
         if theme.glass {

@@ -150,6 +150,9 @@ pub trait Content: ThemeExt {
             )
             .child(
                 div()
+                    .max_w_full()
+                    .px(px(16.0))
+                    .text_center()
                     .text_style(TextStyle::Callout)
                     .text_color(theme.text_muted)
                     .child(hint.into()),
