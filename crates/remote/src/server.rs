@@ -329,6 +329,7 @@ fn content_type(path: &Path) -> &'static str {
         Some("svg") => "image/svg+xml",
         Some("png") => "image/png",
         Some("ttf") => "font/ttf",
+        Some("otf") => "font/otf",
         Some("woff2") => "font/woff2",
         _ => "application/octet-stream",
     }

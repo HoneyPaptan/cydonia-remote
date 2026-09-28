@@ -88,6 +88,20 @@ impl Endpoint {
             .ok_or_else(|| "a body that is not text".to_owned())
     }
 
+    pub async fn asset(&self, path: &str) -> Option<Vec<u8>> {
+        let address = format!("{}/{path}", self.base);
+        let response: Response = JsFuture::from(window().ok()?.fetch_with_str(&address))
+            .await
+            .ok()?
+            .dyn_into()
+            .ok()?;
+        if !response.ok() {
+            return None;
+        }
+        let buffer = JsFuture::from(response.array_buffer().ok()?).await.ok()?;
+        Some(js_sys::Uint8Array::new(&buffer).to_vec())
+    }
+
     pub async fn snapshot(&self) -> Result<Snapshot, String> {
         let body = self.call("GET", "/v1/snapshot", None).await?;
         serde_json::from_str(&body).map_err(|error| error.to_string())

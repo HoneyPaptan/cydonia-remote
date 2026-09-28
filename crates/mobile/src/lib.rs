@@ -8,3 +8,5 @@ mod client;
 mod net;
 #[cfg(target_family = "wasm")]
 mod laptop;
+#[cfg(target_family = "wasm")]
+mod fonts;

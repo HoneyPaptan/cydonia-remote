@@ -1,5 +1,5 @@
 use crate::{
-    apply,
+    apply, fonts,
     net::{self, Endpoint, Inbound},
     seed,
 };
@@ -293,7 +293,9 @@ async fn boot() -> Result<(), String> {
     for project in &snapshot.projects {
         seed::project(project);
     }
-    let settings = seed::settings(&snapshot);
+    let mut settings = seed::settings(&snapshot);
+    let faces = fonts::fetch(&endpoint).await;
+    faces.name_families(&mut settings.appearance);
     let state = seed::state(&snapshot);
     let epoch = snapshot.epoch;
     let seq = snapshot.seq;
@@ -304,9 +306,9 @@ async fn boot() -> Result<(), String> {
     let handle = Application::with_platform(platform)
         .with_http_client(http_client)
         .run_embedded(move |cx: &mut App| {
-            if let Err(error) = cx
-                .text_system()
-                .add_fonts(FONTS.map(Cow::Borrowed).to_vec())
+            let bundled = FONTS.map(Cow::Borrowed).into_iter();
+            let fetched = faces.files.into_iter().map(Cow::Owned);
+            if let Err(error) = cx.text_system().add_fonts(bundled.chain(fetched).collect())
             {
                 show(&format!("font registration failed: {error:?}"));
             }

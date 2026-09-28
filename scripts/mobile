@@ -16,4 +16,35 @@ if command -v wasm-opt >/dev/null && [ "$profile" = release ]; then
 fi
 cp crates/mobile/index.html "$out/index.html"
 gzip -9 -k -f "$out/cydonia_mobile_bg.wasm" "$out/cydonia_mobile.js"
+
+sans_dir="${SF_PRO_DIR:-$HOME/.local/share/fonts/SanFrancisco}"
+mono_dir="${SF_MONO_DIR:-/usr/share/fonts/apple}"
+symbols_font="${SYMBOLS_FONT:-/usr/share/fonts/TTF/DejaVuSans.ttf}"
+text_ranges="U+0000-024F,U+0300-036F,U+0370-03FF,U+0400-04FF,U+2000-20CF,U+2100-23FF,U+2460-27BF,U+2800-28FF,U+2B00-2BFF,U+FFFD"
+mono_ranges="$text_ranges,U+E000-F8FF"
+
+fonts="$out/fonts"
+rm -rf "$fonts"
+mkdir -p "$fonts"
+
+cut_font() {
+  local source="$1" target="$2" ranges="$3"
+  [ -f "$source" ] || { echo "skipping $target: $source is missing" >&2; return 0; }
+  pyftsubset "$source" --output-file="$fonts/$target" --unicodes="$ranges" \
+    --layout-features='*' --name-IDs='*' --notdef-outline --no-hinting
+  gzip -9 -k -f "$fonts/$target"
+}
+
+if command -v pyftsubset >/dev/null; then
+  cut_font "$sans_dir/SF-Pro-Text-Regular.otf" sans-regular.otf "$text_ranges"
+  cut_font "$sans_dir/SF-Pro-Text-RegularItalic.otf" sans-italic.otf "$text_ranges"
+  cut_font "$sans_dir/SF-Pro-Text-Medium.otf" sans-medium.otf "$text_ranges"
+  cut_font "$sans_dir/SF-Pro-Text-Semibold.otf" sans-semibold.otf "$text_ranges"
+  cut_font "$sans_dir/SF-Pro-Text-Bold.otf" sans-bold.otf "$text_ranges"
+  cut_font "$mono_dir/SFMonoNerdFontMono-Regular.otf" mono-regular.otf "$mono_ranges"
+  cut_font "$mono_dir/SFMonoNerdFontMono-Bold.otf" mono-bold.otf "$mono_ranges"
+  cut_font "$symbols_font" symbols.ttf "U+2190-23FF,U+25A0-27BF,U+2800-28FF,U+2B00-2BFF"
+else
+  echo "pyftsubset not found: the phone keeps its built in fonts" >&2
+fi
 echo "$out"
