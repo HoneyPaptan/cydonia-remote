@@ -17,7 +17,11 @@ use bezel::{
         widgets::{ButtonStyle, Buttons as _},
     },
 };
-use browser::{WebView, WebViewEvent};
+#[cfg(not(target_family = "wasm"))]
+use browser::WebView;
+use browser::WebViewEvent;
+#[cfg(target_family = "wasm")]
+use phone::Page as WebView;
 use std::collections::HashMap;
 
 actions!(cydonia_browser, [Go]);
@@ -46,8 +50,8 @@ impl Global for Pages {}
 
 /// A tab id no other tab holds: tab ids are saved across restarts.
 pub fn new_id() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_nanos() as u64)
 }
 
@@ -167,7 +171,15 @@ impl Browser {
         }
         let url = address(&typed);
         let page = self.page(window, cx);
-        page.update(cx, |page, _| page.load(url));
+        if cfg!(target_family = "wasm") {
+            self.url = url.clone();
+            self.title.clear();
+            cx.emit(Changed);
+        }
+        page.update(cx, |page, cx| {
+            page.load(url);
+            cx.notify();
+        });
         window.focus(&page.focus_handle(cx), cx);
     }
 }
@@ -244,11 +256,21 @@ impl Render for Browser {
                     .border_color(theme.border)
                     .child(
                         nav(icons::arrows::ArrowLeft, "browser-back", "Back")
-                            .on_click(move |_, _, cx| back.update(cx, |page, _| page.back())),
+                            .on_click(move |_, _, cx| {
+                                back.update(cx, |page, cx| {
+                                    page.back();
+                                    cx.notify();
+                                })
+                            }),
                     )
                     .child(
                         nav(icons::arrows::ArrowRight, "browser-forward", "Forward")
-                            .on_click(move |_, _, cx| forward.update(cx, |page, _| page.forward())),
+                            .on_click(move |_, _, cx| {
+                                forward.update(cx, |page, cx| {
+                                    page.forward();
+                                    cx.notify();
+                                })
+                            }),
                     )
                     .child(
                         nav(
@@ -256,7 +278,12 @@ impl Render for Browser {
                             "browser-reload",
                             if loading { "Loading…" } else { "Reload" },
                         )
-                        .on_click(move |_, _, cx| reload.update(cx, |page, _| page.reload())),
+                        .on_click(move |_, _, cx| {
+                            reload.update(cx, |page, cx| {
+                                page.reload();
+                                cx.notify();
+                            })
+                        }),
                     )
                     .child(
                         div()
@@ -268,5 +295,218 @@ impl Render for Browser {
             )
             .child(div().flex_1().min_h_0().child(page))
             .into_any_element()
+    }
+}
+
+#[cfg(target_family = "wasm")]
+mod phone {
+    use crate::model::relay::{self, PageOp};
+    use bezel::{
+        gpui::{
+            App, AppContext as _, Bounds, Context, Element, ElementId, Entity, EventEmitter,
+            FocusHandle, Focusable, GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId,
+            IntoElement, LayoutId, Pixels, Render, Style, Window, relative,
+        },
+        ui::cover::{self, Mark},
+    };
+    use browser::{Frame, WebViewEvent};
+    use std::{
+        cell::RefCell,
+        rc::Rc,
+        sync::atomic::{AtomicU64, Ordering},
+    };
+
+    const LOOPBACK: [&str; 4] = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]"];
+
+    fn reach(address: &str) -> String {
+        let (Some(laptop), Ok(mut url)) = (relay::laptop(), url::Url::parse(address)) else {
+            return address.to_owned();
+        };
+        if url
+            .host_str()
+            .is_some_and(|host| LOOPBACK.contains(&host))
+            && url.set_host(Some(laptop)).is_ok()
+        {
+            return url.to_string();
+        }
+        address.to_owned()
+    }
+
+    fn fresh() -> u64 {
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    }
+
+    pub struct Page {
+        id: u64,
+        url: Rc<RefCell<String>>,
+        frame: Option<Entity<Frame>>,
+        focus: FocusHandle,
+    }
+
+    impl EventEmitter<WebViewEvent> for Page {}
+
+    impl Drop for Page {
+        fn drop(&mut self) {
+            relay::page(PageOp::Close { id: self.id });
+        }
+    }
+
+    impl Page {
+        pub fn new(url: String, _: &mut Window, cx: &mut Context<Self>) -> Self {
+            let url = reach(&url);
+            let frame = (!relay::pages_installed()).then(|| {
+                let url = url.clone();
+                cx.new(|_| Frame::new(url))
+            });
+            Self {
+                id: fresh(),
+                url: Rc::new(RefCell::new(url)),
+                frame,
+                focus: cx.focus_handle(),
+            }
+        }
+
+        pub fn location(&self) -> Option<&str> {
+            None
+        }
+
+        pub fn title(&self) -> &str {
+            ""
+        }
+
+        pub fn is_loading(&self) -> bool {
+            false
+        }
+
+        pub fn load(&mut self, url: String) {
+            let url = reach(&url);
+            *self.url.borrow_mut() = url.clone();
+            relay::page(PageOp::Load { id: self.id, url });
+        }
+
+        pub fn back(&mut self) {
+            relay::page(PageOp::Back { id: self.id });
+        }
+
+        pub fn forward(&mut self) {
+            relay::page(PageOp::Forward { id: self.id });
+        }
+
+        pub fn reload(&mut self) {
+            relay::page(PageOp::Reload { id: self.id });
+        }
+    }
+
+    impl Focusable for Page {
+        fn focus_handle(&self, _: &App) -> FocusHandle {
+            self.focus.clone()
+        }
+    }
+
+    impl Render for Page {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            if let Some(frame) = &self.frame {
+                return frame.clone().into_any_element();
+            }
+            Native {
+                id: self.id,
+                url: self.url.clone(),
+            }
+            .into_any_element()
+        }
+    }
+
+    struct Native {
+        id: u64,
+        url: Rc<RefCell<String>>,
+    }
+
+    struct Shown(u64);
+
+    impl Drop for Shown {
+        fn drop(&mut self) {
+            relay::page(PageOp::Park { id: self.0 });
+        }
+    }
+
+    impl IntoElement for Native {
+        type Element = Self;
+
+        fn into_element(self) -> Self::Element {
+            self
+        }
+    }
+
+    impl Element for Native {
+        type RequestLayoutState = ();
+        type PrepaintState = (Hitbox, Mark);
+
+        fn id(&self) -> Option<ElementId> {
+            Some("native-page".into())
+        }
+
+        fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+            None
+        }
+
+        fn request_layout(
+            &mut self,
+            _: Option<&GlobalElementId>,
+            _: Option<&InspectorElementId>,
+            window: &mut Window,
+            cx: &mut App,
+        ) -> (LayoutId, ()) {
+            let mut style = Style::default();
+            style.size.width = relative(1.).into();
+            style.size.height = relative(1.).into();
+            (window.request_layout(style, [], cx), ())
+        }
+
+        fn prepaint(
+            &mut self,
+            _: Option<&GlobalElementId>,
+            _: Option<&InspectorElementId>,
+            bounds: Bounds<Pixels>,
+            _: &mut (),
+            window: &mut Window,
+            _: &mut App,
+        ) -> (Hitbox, Mark) {
+            (
+                window.insert_hitbox(bounds, HitboxBehavior::BlockMouse),
+                cover::mark(),
+            )
+        }
+
+        fn paint(
+            &mut self,
+            id: Option<&GlobalElementId>,
+            _: Option<&InspectorElementId>,
+            bounds: Bounds<Pixels>,
+            _: &mut (),
+            (_, mark): &mut (Hitbox, Mark),
+            window: &mut Window,
+            cx: &mut App,
+        ) {
+            let Some(id) = id else { return };
+            let covered = cover::covered(*mark, bounds, window, cx);
+            let page = self.id;
+            let op = match covered {
+                true => PageOp::Park { id: page },
+                false => PageOp::Place {
+                    id: page,
+                    url: self.url.borrow().clone(),
+                    x: f32::from(bounds.origin.x),
+                    y: f32::from(bounds.origin.y),
+                    width: f32::from(bounds.size.width),
+                    height: f32::from(bounds.size.height),
+                },
+            };
+            window.with_element_state::<Shown, _>(id, |shown, _| {
+                let shown = shown.unwrap_or(Shown(page));
+                relay::page(op);
+                ((), shown)
+            });
+        }
     }
 }
