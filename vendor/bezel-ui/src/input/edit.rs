@@ -240,6 +240,16 @@ impl TextField {
         self.is_selecting = false;
     }
 
+    pub(super) fn on_tap_release(
+        &mut self,
+        event: &MouseUpEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.on_mouse_up(event, window, cx);
+        window.request_virtual_keyboard();
+    }
+
     /// Scrolling is the one thing that moves the view without moving the caret,
     /// so it deliberately does not set `follow_caret` — the next frame clamps
     /// this, and the caret is left wherever it was.
