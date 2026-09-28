@@ -402,6 +402,8 @@ pub fn bind_all(shortcuts: &Shortcuts, cx: &mut App) {
     cx.bind_keys(article::bindings());
     cx.bind_keys(board::bindings());
     cx.bind_keys(super::component::browser::bindings());
+    #[cfg(not(feature = "desktop"))]
+    cx.bind_keys(super::component::shell::bindings());
     cx.bind_keys(super::find::bindings());
     cx.bind_keys(super::search::bindings());
     cx.bind_keys(composer::bindings());

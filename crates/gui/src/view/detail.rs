@@ -855,6 +855,7 @@ impl Cydonia {
                                 .right_0()
                                 .bottom_0()
                                 .bg(theme.bg)
+                                .occlude()
                                 .child(panel)
                         }),
                     )

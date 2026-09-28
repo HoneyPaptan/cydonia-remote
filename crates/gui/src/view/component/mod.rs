@@ -7,6 +7,8 @@ pub mod composer;
 pub mod menu;
 pub mod meter;
 pub mod ribbon;
+#[cfg(not(feature = "desktop"))]
+pub mod shell;
 #[cfg(feature = "desktop")]
 pub mod terminal;
 pub mod transcript;

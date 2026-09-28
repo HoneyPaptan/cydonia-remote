@@ -77,7 +77,6 @@ impl Panel {
                 .ordered()
                 .map(|(_, tab)| match &tab.content {
                     Content::Review(_) => SavedTab::Review,
-                    #[cfg(feature = "desktop")]
                     Content::Terminal(terminal) => {
                         SavedTab::Terminal(terminal.read(cx).directory.clone())
                     }

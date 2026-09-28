@@ -2,6 +2,8 @@
 
 mod persistence;
 
+#[cfg(not(feature = "desktop"))]
+use super::shell::{DirectoryChanged, Exited, Terminal};
 #[cfg(feature = "desktop")]
 use super::terminal::{DirectoryChanged, Exited, Terminal};
 use super::{browser::Browser, changes::Changes, file::FileView, files::Files};
@@ -78,7 +80,6 @@ impl Launch {
 
 enum Content {
     Review(Entity<Changes>),
-    #[cfg(feature = "desktop")]
     Terminal(Entity<Terminal>),
     File(Entity<FileView>),
     Browser(Entity<Browser>),
@@ -94,6 +95,7 @@ pub struct Panel {
     files: Option<Entity<Files>>,
     files_open: bool,
     files_width: f32,
+    alone: bool,
     files_subscription: Option<Subscription>,
     focus: gpui::FocusHandle,
     /// The row: which tabs are open, in what order, and which is in front.
@@ -120,6 +122,7 @@ impl Panel {
             files: None,
             files_open: false,
             files_width: 220.,
+            alone: false,
             files_subscription: None,
             cwd,
             focus: cx.focus_handle(),
@@ -214,6 +217,9 @@ impl Panel {
     ) -> usize {
         let id = self.next_id;
         self.next_id += 1;
+        if self.alone {
+            self.files_open = false;
+        }
         self.contents.insert(
             id,
             Tab {
@@ -243,7 +249,7 @@ impl Panel {
         if !self.tabs.review {
             return;
         }
-        if cfg!(not(feature = "desktop")) {
+        if cfg!(not(feature = "desktop")) && !crate::model::relay::installed() {
             cx.emit(DesktopOnly("Review"));
             return;
         }
@@ -264,15 +270,11 @@ impl Panel {
         self.push(Content::Review(review), vec![open, watch], cx);
     }
 
-    /// Without the `desktop` feature there is no shell to run.
-    #[cfg(not(feature = "desktop"))]
     fn terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let _ = window;
-        cx.emit(DesktopOnly("The terminal"));
-    }
-
-    #[cfg(feature = "desktop")]
-    fn terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if cfg!(not(feature = "desktop")) && crate::model::relay::shells().is_none() {
+            cx.emit(DesktopOnly("The terminal"));
+            return;
+        }
         let terminal = cx.new(|cx| Terminal::new(&self.cwd, cx));
         let id = self.next_id;
         let exit = cx.subscribe_in(&terminal, window, move |this, _, _: &Exited, window, cx| {
@@ -290,7 +292,6 @@ impl Panel {
     fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(tab) = self.front() {
             match &tab.content {
-                #[cfg(feature = "desktop")]
                 Content::Terminal(terminal) => window.focus(&terminal.focus_handle(cx), cx),
                 Content::File(file) => window.focus(&file.focus_handle(cx), cx),
                 Content::Browser(browser) => window.focus(&browser.focus_handle(cx), cx),
@@ -307,10 +308,14 @@ impl Panel {
         }
         if self.files.is_none() {
             let files = cx.new(|cx| Files::new(self.project_root.clone(), cx));
-            self.files_subscription = Some(cx.subscribe(
+            self.files_subscription = Some(cx.subscribe_in(
                 &files,
-                |this, _, event: &super::files::Open, cx| {
+                window,
+                |this, _, event: &super::files::Open, window, cx| {
                     this.open_file(event.0.clone(), cx);
+                    if crate::view::root::narrow(window) {
+                        this.files_open = false;
+                    }
                 },
             ));
             self.files = Some(files);
@@ -458,6 +463,8 @@ impl Panel {
 impl Render for Panel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.restore_tabs(window, cx);
+        let alone = crate::view::root::narrow(window);
+        self.alone = alone;
         if self.focus_pending {
             self.focus_pending = false;
             self.focus(window, cx);
@@ -514,7 +521,6 @@ impl Render for Panel {
                 Content::Review(review) => {
                     review.update(cx, |review, cx| review.status_bar(self.files_state(), cx))
                 }
-                #[cfg(feature = "desktop")]
                 Content::Terminal(terminal) => {
                     let directory = &terminal.read(cx).directory;
                     super::status::bar(&theme)
@@ -551,7 +557,6 @@ impl Render for Panel {
             .front()
             .map(|tab| match &tab.content {
                 Content::Review(review) => review.clone().into_any_element(),
-                #[cfg(feature = "desktop")]
                 Content::Terminal(terminal) => terminal.clone().into_any_element(),
                 Content::File(file) => file.clone().into_any_element(),
                 Content::Browser(browser) => browser.clone().into_any_element(),
@@ -656,7 +661,6 @@ impl Render for Panel {
                         tabs::bar("panel-tabs").children(self.ordered().map(|(id, tab)| {
                             let icon = match &tab.content {
                                 Content::Review(_) => icons::development::GitCompare,
-                                #[cfg(feature = "desktop")]
                                 Content::Terminal(_) => icons::development::Terminal,
                                 Content::File(_) => icons::files::File,
                                 Content::Browser(_) => icons::navigation::Globe,
@@ -667,7 +671,6 @@ impl Render for Panel {
                                 Content::Review(_) => {
                                     ("Review".to_string(), "Review".to_string(), false)
                                 }
-                                #[cfg(feature = "desktop")]
                                 Content::Terminal(terminal) => {
                                     let path = &terminal.read(cx).directory;
                                     (
@@ -713,6 +716,9 @@ impl Render for Panel {
                                 .tooltip(move |window, cx| Tooltip::text(path.clone(), window, cx))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     this.strip.activate(&id);
+                                    if this.alone {
+                                        this.files_open = false;
+                                    }
                                     this.focus(window, cx);
                                     cx.notify();
                                 }))
@@ -842,21 +848,21 @@ impl Render for Panel {
                             cx.notify();
                         }),
                     )
-                    .when(!(self.files_open && self.strip.is_empty()), |row| {
+                    .when(!(self.files_open && (self.strip.is_empty() || alone)), |row| {
                         row.child(div().flex_1().min_w_0().child(body))
                     })
                     .when(self.files_open, |row| {
                         row.children(self.files.clone().map(|files| {
                             div()
-                                .when(self.strip.is_empty(), |tree| tree.flex_1().w_full())
-                                .when(!self.strip.is_empty(), |tree| {
+                                .when(self.strip.is_empty() || alone, |tree| tree.flex_1().w_full())
+                                .when(!self.strip.is_empty() && !alone, |tree| {
                                     tree.w(px(self.files_width))
                                         .max_w(gpui::relative(0.8))
                                         .flex_none()
                                 })
                                 .relative()
                                 .child(files)
-                                .when(!self.strip.is_empty(), |tree| {
+                                .when(!self.strip.is_empty() && !alone, |tree| {
                                     tree.child(
                                         crate::view::component::divider::divider(
                                             &theme,
