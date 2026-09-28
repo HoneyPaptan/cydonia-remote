@@ -7,7 +7,6 @@ use bezel::{
     theme::{Appearance, TextStyle, Theme, Typeset},
     ui::{
         input::TextField,
-        widgets::{ButtonStyle, Buttons as _},
     },
 };
 use futures::StreamExt as _;
@@ -24,14 +23,18 @@ const CONTEXT: &str = "CydoniaShell";
 const LINE: f32 = 1.3;
 const INSET: f32 = 8.;
 
-const KEYS: [(&str, &str); 8] = [
+const KEY_HEIGHT: f32 = 34.;
+
+const KEYS: [(&str, &str); 10] = [
     ("Esc", "\x1b"),
     ("Tab", "\t"),
     ("^C", "\x03"),
     ("^D", "\x04"),
-    ("\u{2191}", "\x1b[A"),
-    ("\u{2193}", "\x1b[B"),
+    ("^L", "\x0c"),
+    ("^R", "\x12"),
     ("\u{2190}", "\x1b[D"),
+    ("\u{2193}", "\x1b[B"),
+    ("\u{2191}", "\x1b[A"),
     ("\u{2192}", "\x1b[C"),
 ];
 
@@ -244,19 +247,60 @@ impl Terminal {
             }))
     }
 
+    fn keycap(theme: &Theme, id: SharedString, label: &'static str) -> gpui::Stateful<gpui::Div> {
+        let pressed = theme.element_active;
+        div()
+            .id(id)
+            .flex_1()
+            .min_w_0()
+            .h(px(KEY_HEIGHT))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(8.))
+            .bg(theme.element_hover)
+            .active(move |key| key.bg(pressed))
+            .font_family(theme.font_mono.clone())
+            .text_style(TextStyle::Callout)
+            .text_color(theme.text)
+            .child(label)
+    }
+
     fn key_row(&self, theme: &Theme, cx: &mut Context<Self>) -> gpui::Div {
         div()
             .flex()
             .flex_none()
-            .flex_wrap()
+            .flex_row()
             .gap(px(4.))
             .children(KEYS.iter().map(|(label, bytes)| {
                 let bytes = *bytes;
-                theme
-                    .button(*label, ButtonStyle::Ghost, None)
-                    .id(SharedString::from(format!("shell-key-{label}")))
+                Self::keycap(theme, format!("shell-key-{label}").into(), label)
                     .on_click(cx.listener(move |this, _, _, _| this.keys(bytes)))
             }))
+    }
+
+    fn command_line(&self, theme: &Theme, cx: &mut Context<Self>) -> gpui::Div {
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(6.))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .on_action(cx.listener(Self::submit))
+                    .child(self.field.clone()),
+            )
+            .child(
+                Self::keycap(theme, "shell-enter".into(), "\u{23ce}")
+                    .flex_none()
+                    .w(px(52.))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.submit(&Submit, window, cx);
+                        window.focus(&this.field.focus_handle(cx), cx);
+                    })),
+            )
     }
 }
 
@@ -363,16 +407,15 @@ impl Render for Terminal {
                     .flex()
                     .flex_col()
                     .flex_none()
-                    .gap(px(4.))
-                    .p(px(6.))
+                    .gap(px(8.))
+                    .px(px(8.))
+                    .pt(px(8.))
+                    .pb(px(10.))
                     .border_t_1()
                     .border_color(theme.border)
+                    .bg(theme.surface)
                     .child(self.key_row(&theme, cx))
-                    .child(
-                        div()
-                            .on_action(cx.listener(Self::submit))
-                            .child(self.field.clone()),
-                    ),
+                    .child(self.command_line(&theme, cx)),
             )
             .into_any_element()
     }
