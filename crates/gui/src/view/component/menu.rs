@@ -243,9 +243,13 @@ impl Cydonia {
                         return;
                     };
                     this.shut_menu();
+                    if crate::view::root::narrow(window) {
+                        this.remember_drawer_front(cx);
+                    }
                     if let Some(act) = acts.get(row) {
                         act(this, rest, window, cx);
                     }
+                    this.close_drawer_on_arrival(cx);
                     cx.notify();
                 }
                 Hit::Dismiss => {
