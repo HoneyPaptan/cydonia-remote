@@ -1811,6 +1811,7 @@ impl Cydonia {
             Some(editor) => div()
                 .min_h_full()
                 .cursor(gpui::CursorStyle::IBeam)
+                .on_mouse_up(gpui::MouseButton::Left, super::article::summon_keyboard)
                 // Below and beside the text is still the card: a press there
                 // lands the caret, as it does on an article's page.
                 .on_mouse_down(gpui::MouseButton::Left, {

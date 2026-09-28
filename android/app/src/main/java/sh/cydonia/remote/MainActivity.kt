@@ -147,6 +147,8 @@ class MainActivity : Activity() {
       }
     }
     show(view)
+    view.isFocusableInTouchMode = true
+    view.requestFocus()
     web = view
     watchdog.postDelayed({ offline(connection) }, LOAD_TIMEOUT)
     view.loadUrl(connection.page)

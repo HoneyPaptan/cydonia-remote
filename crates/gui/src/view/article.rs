@@ -447,6 +447,7 @@ impl Cydonia {
                     .flex()
                     .justify_center()
                     .cursor(CursorStyle::IBeam)
+                    .on_mouse_up(MouseButton::Left, summon_keyboard)
                     .on_mouse_down(MouseButton::Left, {
                         let editor = editor.clone();
                         move |event, window, cx| {
@@ -706,4 +707,8 @@ impl Cydonia {
             this.open_article(project, ix, window, cx);
         }))
     }
+}
+
+pub(crate) fn summon_keyboard(_: &gpui::MouseUpEvent, window: &mut Window, _: &mut App) {
+    window.request_virtual_keyboard();
 }
