@@ -1065,6 +1065,7 @@ impl Cydonia {
         theme
             .empty_state(icons::files::Folder, "Nothing open", format!("in {name}"))
             .flex_1()
+            .px(px(16.))
             .child(make_list(rows))
             .into_any_element()
     }
