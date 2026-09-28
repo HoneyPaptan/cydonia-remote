@@ -1,4 +1,4 @@
-use futures::channel::mpsc::UnboundedSender;
+use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use remote::proto::{Ack, Command, Frame, Snapshot};
 use wasm_bindgen::{JsCast as _, JsValue, closure::Closure};
 use wasm_bindgen_futures::JsFuture;
@@ -6,6 +6,7 @@ use web_sys::{CloseEvent, Headers, MessageEvent, Request, RequestInit, Response,
 
 const TOKEN_KEY: &str = "token=";
 const PROTOCOL: &str = "cydonia";
+const RESUMED: &str = "cydonia-resume";
 
 pub struct Endpoint {
     pub base: String,
@@ -135,6 +136,43 @@ impl Endpoint {
             _close: close,
         })
     }
+}
+
+fn listen(
+    target: &web_sys::EventTarget,
+    name: &str,
+    wake: UnboundedSender<()>,
+    when: fn() -> bool,
+) {
+    let callback = Closure::<dyn FnMut()>::new(move || {
+        if when() {
+            let _ = wake.unbounded_send(());
+        }
+    });
+    let _ = target.add_event_listener_with_callback(name, callback.as_ref().unchecked_ref());
+    callback.forget();
+}
+
+fn always() -> bool {
+    true
+}
+
+fn visible() -> bool {
+    web_sys::window()
+        .and_then(|window| window.document())
+        .is_some_and(|document| document.visibility_state() == web_sys::VisibilityState::Visible)
+}
+
+pub fn returns() -> UnboundedReceiver<()> {
+    let (wake, returns) = mpsc::unbounded();
+    if let Some(window) = web_sys::window() {
+        listen(&window, "online", wake.clone(), always);
+        listen(&window, RESUMED, wake.clone(), always);
+        if let Some(document) = window.document() {
+            listen(&document, "visibilitychange", wake, visible);
+        }
+    }
+    returns
 }
 
 pub async fn sleep(milliseconds: i32) {

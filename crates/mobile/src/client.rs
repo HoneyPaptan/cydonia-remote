@@ -4,7 +4,11 @@ use crate::{
     seed,
 };
 use bezel::gpui::{App, Application, ApplicationHandle, AsyncApp, Entity};
-use futures::{StreamExt as _, channel::mpsc};
+use futures::{
+    FutureExt as _, StreamExt as _,
+    channel::mpsc::{self, UnboundedReceiver},
+    select,
+};
 use gui::{
     boot,
     model::{
@@ -154,9 +158,9 @@ impl Client {
         true
     }
 
-    async fn resync(&self, cx: &mut AsyncApp) {
+    async fn resync(&self, cx: &mut AsyncApp) -> bool {
         let Ok(snapshot) = self.endpoint.snapshot().await else {
-            return;
+            return false;
         };
         self.epoch.set(snapshot.epoch);
         self.seq.set(snapshot.seq);
@@ -165,37 +169,78 @@ impl Client {
         self.workspace.update(cx, |workspace, cx| {
             apply::everything(workspace, &mirror, cx)
         });
+        true
+    }
+
+    async fn resync_ending(&self, cx: &mut AsyncApp) -> Ending {
+        if self.resync(cx).await {
+            Ending::Current
+        } else {
+            Ending::Lost
+        }
+    }
+
+    async fn listen(
+        &self,
+        returns: &mut UnboundedReceiver<()>,
+        wait: &mut i32,
+        cx: &mut AsyncApp,
+    ) -> Ending {
+        let (sender, mut inbound) = mpsc::unbounded();
+        let Ok(_socket) = self
+            .endpoint
+            .subscribe(self.epoch.get(), self.seq.get(), sender)
+        else {
+            return Ending::Lost;
+        };
+        loop {
+            let message = select! {
+                message = inbound.next() => message,
+                _ = returns.next() => return Ending::Returned,
+            };
+            match message {
+                Some(Inbound::Frame(Frame::Event { event })) => {
+                    *wait = FIRST_WAIT;
+                    if !self.take(*event, cx) {
+                        return self.resync_ending(cx).await;
+                    }
+                }
+                Some(Inbound::Frame(Frame::Resync)) => return self.resync_ending(cx).await,
+                Some(Inbound::Closed) | None => return Ending::Lost,
+            }
+        }
     }
 
     async fn follow(self: Rc<Self>, cx: &mut AsyncApp) {
+        let mut returns = net::returns();
         let mut wait = FIRST_WAIT;
         loop {
-            let (sender, mut inbound) = mpsc::unbounded();
-            if let Ok(_socket) = self
-                .endpoint
-                .subscribe(self.epoch.get(), self.seq.get(), sender)
-            {
-                while let Some(message) = inbound.next().await {
-                    match message {
-                        Inbound::Frame(Frame::Event { event }) => {
-                            wait = FIRST_WAIT;
-                            if !self.take(*event, cx) {
-                                self.resync(cx).await;
-                                break;
-                            }
-                        }
-                        Inbound::Frame(Frame::Resync) => {
-                            self.resync(cx).await;
-                            break;
-                        }
-                        Inbound::Closed => break,
-                    }
-                }
-            }
-            net::sleep(wait).await;
-            wait = (wait * 2).min(LAST_WAIT);
+            let returned = match self.listen(&mut returns, &mut wait, cx).await {
+                Ending::Current => continue,
+                Ending::Returned => true,
+                Ending::Lost => select! {
+                    _ = net::sleep(wait).fuse() => false,
+                    _ = returns.next() => true,
+                },
+            };
+            drain(&mut returns);
+            wait = if returned {
+                FIRST_WAIT
+            } else {
+                (wait * 2).min(LAST_WAIT)
+            };
         }
     }
+}
+
+enum Ending {
+    Current,
+    Returned,
+    Lost,
+}
+
+fn drain(returns: &mut UnboundedReceiver<()>) {
+    while returns.try_recv().is_ok() {}
 }
 
 async fn boot() -> Result<(), String> {
