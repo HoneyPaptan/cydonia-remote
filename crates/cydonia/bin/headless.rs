@@ -8,6 +8,7 @@ use bezel::{
 use gui::{
     boot,
     model::{settings::Settings, state::State, workspace::Workspace},
+    remote::Options,
 };
 
 const BUNDLE_ID: &str = "sh.cydonia";
@@ -16,12 +17,18 @@ const BUNDLE_ID: &str = "sh.cydonia";
 ///
 /// A daemon has no window to own it, and a released `Entity` takes every
 /// session and agent with it, so the one owner is a leak on purpose.
-pub fn run(settings: Settings, state: State) -> Result<()> {
+pub fn run(settings: Settings, state: State, remote: Option<Options>) -> Result<()> {
     let app = gpui_platform::headless();
     app.run(move |cx: &mut App| {
         cx.set_app_identity(BUNDLE_ID, "Cydonia");
         boot::init(&settings, cx);
         let workspace = cx.new(|cx| Workspace::new(settings, state, cx));
+        if let Some(options) = remote
+            && let Err(error) = gui::remote::start(workspace.clone(), options, cx)
+        {
+            eprintln!("remote server failed to start: {error:#}");
+            cx.quit();
+        }
         let _owned = Box::leak(Box::new(workspace));
     });
     Ok(())

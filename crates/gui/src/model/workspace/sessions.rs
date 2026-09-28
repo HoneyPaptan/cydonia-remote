@@ -278,10 +278,20 @@ impl Workspace {
     /// seeded with `content`, behind whatever the window shows. Nothing
     /// happens where either is not held.
     pub fn start_in(&mut self, path: &Path, agent: &str, content: String, cx: &mut Context<Self>) {
-        let entry = named(&self.settings.agents, Some(agent), agent).cloned();
-        if let (Some(ix), Some(entry)) = (self.project_at(path), entry) {
-            self.new_session_in(ix, entry, Some(content), false, cx);
+        if let Some(entry) = named(&self.settings.agents, Some(agent), agent).cloned() {
+            self.start_session_in(path, entry, Some(content), cx);
         }
+    }
+
+    pub fn start_session_in(
+        &mut self,
+        path: &Path,
+        entry: settings::Agent,
+        seed: Option<String>,
+        cx: &mut Context<Self>,
+    ) -> Option<u64> {
+        let ix = self.project_at(path)?;
+        self.new_session_in(ix, entry, seed, false, cx)
     }
 
     /// Send a message with pictures. Each is kept in the project's assets and

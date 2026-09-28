@@ -4,6 +4,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod headless;
+mod remote;
 
 use anyhow::Result;
 use bezel::{gpui::App, gpui_platform};
@@ -31,8 +32,10 @@ fn main() -> Result<()> {
     // After the restore and before the window: it reads whether `state.toml`
     // is there, which is what tells a first run from every other one.
     welcome::seed(&mut state);
-    if std::env::args().any(|arg| arg == "--headless") {
-        return headless::run(settings, state);
+    let args: Vec<String> = std::env::args().collect();
+    let remote = remote::options(&args)?;
+    if args.iter().any(|arg| arg == "--headless") {
+        return headless::run(settings, state, remote);
     }
     let app = gpui_platform::application();
     // The Dock icon and a second launch both land here. ⌘W leaves the app
@@ -69,7 +72,13 @@ fn main() -> Result<()> {
         // shortcuts beside its items.
         menubar::init(cx);
 
-        root::open(settings, state, cx).expect("failed to open window");
+        let window = root::open(settings, state, cx).expect("failed to open window");
+        if let Some(options) = remote
+            && let Ok(workspace) = window.read_with(cx, |root, _| root.workspace())
+            && let Err(error) = gui::remote::start(workspace, options, cx)
+        {
+            eprintln!("remote server failed to start: {error:#}");
+        }
         cx.activate(true);
     });
     Ok(())

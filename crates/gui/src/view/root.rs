@@ -272,6 +272,10 @@ pub fn bindings() -> Vec<KeyBinding> {
 }
 
 impl Cydonia {
+    pub fn workspace(&self) -> Entity<Workspace> {
+        self.workspace.clone()
+    }
+
     fn save_window(&mut self, cx: &mut App) {
         if let Some(frame) = self.window_frame.take() {
             self.workspace

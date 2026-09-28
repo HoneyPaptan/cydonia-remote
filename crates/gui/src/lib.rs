@@ -7,4 +7,6 @@ pub mod boot;
 pub mod data;
 pub mod memory;
 pub mod model;
+#[cfg(feature = "desktop")]
+pub mod remote;
 pub mod view;

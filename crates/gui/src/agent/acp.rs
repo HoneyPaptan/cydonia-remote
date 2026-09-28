@@ -112,6 +112,11 @@ impl<T> Reply<T> {
     pub fn send(self, value: T) {
         let _ = self.0.send(Ok(value));
     }
+
+    #[cfg(test)]
+    pub fn detached() -> Self {
+        Self(oneshot::channel().0)
+    }
 }
 
 /// A live session: the connection, its identity, and the agent process.

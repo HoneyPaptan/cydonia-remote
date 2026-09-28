@@ -23,6 +23,7 @@ chrono = "0.4"
 dirs = "6"
 editor = { version = "0.2.2", package = "bezel-editor" }
 futures = "0.3"
+getrandom = "0.3"
 gui = { version = "0.1.16", path = "crates/gui", package = "cydonia-gui", default-features = false }
 global-hotkey = "0.8"
 image = "0.25"

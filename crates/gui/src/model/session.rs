@@ -137,6 +137,7 @@ pub struct Command {
 }
 
 pub struct PermissionPrompt {
+    pub request: u64,
     pub title: String,
     pub options: Vec<Choice>,
     /// Whether the answer should stand for every call like this one, rather
@@ -146,6 +147,26 @@ pub struct PermissionPrompt {
     pub always: bool,
     #[cfg(feature = "desktop")]
     reply: Reply<RequestPermissionResponse>,
+}
+
+#[cfg(all(test, feature = "desktop"))]
+impl PermissionPrompt {
+    pub fn standing(request: u64, title: &str, options: Vec<Choice>) -> Self {
+        Self {
+            request,
+            title: title.to_owned(),
+            options,
+            always: false,
+            reply: acp::Reply::detached(),
+        }
+    }
+}
+
+#[cfg(feature = "desktop")]
+fn next_request() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
 pub struct ChatSession {
@@ -345,6 +366,10 @@ impl ChatSession {
     }
 
     /// Drop only a persisted archive; failed saves retain the in-memory copy.
+    pub fn history_unloaded(&self) -> bool {
+        self.history_unloaded
+    }
+
     pub fn unload_history(&mut self) {
         if !self.closed || self.history_unloaded || self.draft_save.is_some() {
             return;
@@ -1018,6 +1043,7 @@ impl ChatSession {
             .clone()
             .unwrap_or_else(|| "Permission required".to_owned());
         self.permission = Some(PermissionPrompt {
+            request: next_request(),
             title,
             options,
             always: false,

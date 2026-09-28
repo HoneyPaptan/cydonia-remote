@@ -25,6 +25,7 @@ chrono.workspace = true
 dirs.workspace = true
 editor.workspace = true
 futures.workspace = true
+getrandom = { workspace = true, optional = true }
 global-hotkey = { workspace = true, optional = true }
 image.workspace = true
 lru.workspace = true
@@ -37,6 +38,7 @@ serde_json.workspace = true
 sha2.workspace = true
 syntax = { workspace = true, optional = true }
 prompts.workspace = true
+remote.workspace = true
 terminal = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 toml.workspace = true
@@ -58,9 +60,11 @@ desktop = [
     "dep:gpui_platform",
     "cacp/client",
     "cacp-agents/install",
+    "dep:getrandom",
     "dep:global-hotkey",
     "mcp/http",
     "dep:portable-pty",
+    "remote/server",
     "dep:syntax",
     "dep:terminal",
     "dep:tokio",
