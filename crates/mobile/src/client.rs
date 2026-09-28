@@ -311,6 +311,7 @@ async fn boot() -> Result<(), String> {
                 show(&format!("font registration failed: {error:?}"));
             }
             cx.set_global(NoBackdropBlur);
+            cx.set_global(bezel::ui::tooltip::Hidden);
             boot::init(&settings, cx);
             let window = root::open(settings, state, cx).expect("failed to open the window");
             let workspace = window

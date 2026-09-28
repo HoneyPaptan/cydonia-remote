@@ -13,11 +13,20 @@
 //!     .child("⌘C")
 //! ```
 
-use gpui::{Action, AnyView, App, Context, IntoElement, SharedString, Window, div, prelude::*, px};
+use gpui::{
+    Action, AnyView, App, Context, Global, IntoElement, SharedString, Window, div,
+    prelude::*, px,
+};
 
 use theme::{TextStyle, Theme, Typeset};
 
 use crate::{keys, popover, surface::Surfaced as _};
+
+/// Set on a touch screen, where there is no hover to show a tooltip for and a
+/// press would otherwise leave one standing over the content.
+pub struct Hidden;
+
+impl Global for Hidden {}
 
 pub struct Tooltip {
     text: SharedString,
@@ -88,6 +97,9 @@ impl Tooltip {
 
 impl Render for Tooltip {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if cx.has_global::<Hidden>() {
+            return div().into_any_element();
+        }
         let theme = Theme::of(cx).clone();
         // Tooltips are small and frequent, so this is a tighter card than
         // `popover_card`: less padding, no menu rhythm.
@@ -110,5 +122,6 @@ impl Render for Tooltip {
                 )
             })
             .surface(&theme, theme.popover_surface)
+            .into_any_element()
     }
 }
