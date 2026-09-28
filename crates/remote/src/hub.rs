@@ -52,6 +52,10 @@ impl Hub {
         changes.len()
     }
 
+    pub fn watchers(&self) -> usize {
+        self.wake.receiver_count()
+    }
+
     pub fn mirror(&self) -> Mirror {
         self.state().mirror.clone()
     }

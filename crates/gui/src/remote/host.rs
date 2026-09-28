@@ -118,8 +118,46 @@ fn epoch() -> u64 {
         .map_or(0, |elapsed| elapsed.as_nanos() as u64)
 }
 
+struct Serving {
+    listen: Vec<SocketAddr>,
+    token: String,
+    hub: Arc<Hub>,
+}
+
+static SERVING: std::sync::OnceLock<Serving> = std::sync::OnceLock::new();
+
+pub struct Served {
+    pub listen: Vec<SocketAddr>,
+    pub watchers: usize,
+}
+
+pub fn served() -> Option<Served> {
+    SERVING.get().map(|serving| Served {
+        listen: serving.listen.clone(),
+        watchers: serving.hub.watchers(),
+    })
+}
+
+pub fn pairing_link() -> Option<String> {
+    let serving = SERVING.get()?;
+    let address = serving
+        .listen
+        .iter()
+        .find(|at| !at.ip().is_loopback())
+        .or(serving.listen.first())?;
+    Some(format!(
+        "cydonia://connect?address={address}&token={}",
+        serving.token
+    ))
+}
+
 pub fn start(workspace: Entity<Workspace>, options: Options, cx: &mut App) -> Result<()> {
     let hub = Hub::new(epoch());
+    let _ = SERVING.set(Serving {
+        listen: options.listen.clone(),
+        token: options.token.clone(),
+        hub: hub.clone(),
+    });
     let (dispatch, mut actions) = mpsc::unbounded();
     let router = server::router(
         Config {

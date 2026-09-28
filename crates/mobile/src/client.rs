@@ -264,6 +264,7 @@ impl Client {
         else {
             return Ending::Lost;
         };
+        crate::hosts::linked(true);
         loop {
             let message = select! {
                 message = inbound.next() => message,
@@ -289,10 +290,13 @@ impl Client {
             let returned = match self.listen(&mut returns, &mut wait, cx).await {
                 Ending::Current => continue,
                 Ending::Returned => true,
-                Ending::Lost => select! {
-                    _ = net::sleep(wait).fuse() => false,
-                    _ = returns.next() => true,
-                },
+                Ending::Lost => {
+                    crate::hosts::linked(false);
+                    select! {
+                        _ = net::sleep(wait).fuse() => false,
+                        _ = returns.next() => true,
+                    }
+                }
             };
             drain(&mut returns);
             wait = if returned {
@@ -358,6 +362,7 @@ async fn boot() -> Result<(), String> {
                 workspace: workspace.clone(),
             });
             crate::laptop::install(endpoint.clone());
+            crate::hosts::install();
             gui::model::sink::install(Rc::new(Commands {
                 endpoint: endpoint.clone(),
                 opening: opening.clone(),

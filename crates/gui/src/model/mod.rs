@@ -7,6 +7,7 @@ pub mod cover;
 pub mod disk;
 pub mod file_url;
 pub mod git;
+pub mod hosts;
 pub mod language;
 #[cfg(feature = "desktop")]
 pub mod link;

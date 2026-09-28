@@ -48,6 +48,7 @@ mod agents;
 mod agents;
 mod developer;
 mod features;
+mod hosts;
 mod general;
 mod mcp;
 mod performance;
@@ -81,13 +82,14 @@ impl Section {
         matches!(self, Self::Agents) && cfg!(feature = "desktop")
     }
 
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 9] = [
         Self::General,
         Self::Appearance,
         Self::Shortcuts,
         Self::Features,
         Self::Agents,
         Self::Mcp,
+        Self::Hosts,
         Self::Performance,
         Self::Developer,
     ];
@@ -114,6 +116,7 @@ impl Section {
             Self::Features => "Features",
             Self::Agents => "Agents",
             Self::Mcp => "MCP",
+            Self::Hosts => "Hosts",
             Self::Performance => "Performance",
             Self::Developer => "Developer",
         }
@@ -132,6 +135,7 @@ impl Section {
                 Some("The tools cydonia offers the agents it runs, over a port on this machine.")
             }
             Self::Developer => Some("Switches for looking at what has not happened yet."),
+            Self::Hosts => Some("The computers this app can drive, and whether each one answers."),
             Self::General | Self::Appearance | Self::Agents | Self::Performance => None,
         }
     }
@@ -145,6 +149,7 @@ impl Section {
             Self::Features => icons::account::SlidersHorizontal,
             Self::Agents => icons::development::Bot,
             Self::Mcp => icons::development::Plug,
+            Self::Hosts => icons::development::Server,
             Self::Performance => icons::devices::Cpu,
             Self::Developer => icons::development::Wrench,
         }
@@ -168,6 +173,8 @@ pub struct SettingsWindow {
     listings: Option<Vec<Listing>>,
     #[cfg(not(feature = "desktop"))]
     arming: Option<String>,
+    host_address: Entity<TextField>,
+    host_token: Entity<TextField>,
     /// Agents with an install or a removal running.
     #[cfg(feature = "desktop")]
     busy: HashSet<String>,
@@ -310,6 +317,16 @@ impl SettingsWindow {
             listings: None,
             #[cfg(not(feature = "desktop"))]
             arming: None,
+            host_address: cx.new(|cx| {
+                TextField::new(cx)
+                    .with_shape(bezel::ui::input::Shape::Line)
+                    .with_placeholder("Address, like 100.101.14.98:7878")
+            }),
+            host_token: cx.new(|cx| {
+                TextField::new(cx)
+                    .with_shape(bezel::ui::input::Shape::Line)
+                    .with_placeholder("Token from the host")
+            }),
             #[cfg(feature = "desktop")]
             busy: HashSet::new(),
             #[cfg(feature = "desktop")]
@@ -479,6 +496,7 @@ impl SettingsWindow {
             | Section::Shortcuts
             | Section::Features
             | Section::Mcp
+            | Section::Hosts
             | Section::Performance
             | Section::Developer => {}
         }
@@ -661,6 +679,7 @@ impl Render for SettingsWindow {
                                 Section::Features => self.features_body(cx),
                                 Section::Agents => self.agents_body(cx),
                                 Section::Mcp => self.mcp_body(cx),
+                                Section::Hosts => self.hosts_body(cx),
                                 Section::Performance => self.performance_body(cx),
                                 Section::Developer => self.developer_body(cx),
                             }),

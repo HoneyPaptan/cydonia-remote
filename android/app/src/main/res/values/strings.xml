@@ -8,5 +8,6 @@
   <string name="offline">Cannot reach the laptop at %1$s</string>
   <string name="retry">Retry</string>
   <string name="change">Change connection</string>
+  <string name="use_host">Use %1$s</string>
   <string name="not_private">%1$s is not a Tailscale address. Use https or a tailnet address so the token is never sent in the clear.</string>
 </resources>

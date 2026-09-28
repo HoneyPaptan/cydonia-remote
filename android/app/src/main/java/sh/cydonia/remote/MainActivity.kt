@@ -67,6 +67,12 @@ class MainActivity : Activity() {
     }
   }
 
+  fun switchTo(connection: Connection) {
+    connection.save(this)
+    Hosts.remember(this, connection)
+    open(connection)
+  }
+
   private fun open(connection: Connection) {
     when {
       !connection.complete -> askFor(connection)
@@ -127,8 +133,7 @@ class MainActivity : Activity() {
       addView(token, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
       addView(button(getString(R.string.connect)) {
         val entered = Connection(address.text.toString().trim(), token.text.toString().trim())
-        entered.save(this@MainActivity)
-        open(entered)
+        switchTo(entered)
       })
     })
   }
@@ -138,6 +143,9 @@ class MainActivity : Activity() {
       addView(label(getString(R.string.offline, connection.address)))
       addView(button(getString(R.string.retry)) { load(connection) })
       addView(button(getString(R.string.change)) { askFor(connection) })
+      Hosts.saved(this@MainActivity)
+        .filter { it.address != connection.address }
+        .forEach { other -> addView(button(getString(R.string.use_host, other.address)) { switchTo(other) }) }
     })
   }
 
@@ -176,6 +184,7 @@ class MainActivity : Activity() {
     show(stack)
     val shown = Pages(this, layer)
     view.addJavascriptInterface(shown, "CydoniaShell")
+    view.addJavascriptInterface(Hosts(this, connection), "CydoniaHosts")
     pages = shown
     view.isFocusableInTouchMode = true
     view.requestFocus()
