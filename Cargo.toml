@@ -1,6 +1,7 @@
 [workspace]
 members = ["crates/cydonia", "crates/gui", "crates/demo", "crates/artifact", "crates/mcp", "crates/prompts", "crates/remote", "crates/mobile"]
 resolver = "3"
+exclude = ["vendor"]
 
 [workspace.package]
 version = "0.1.19"
@@ -57,3 +58,7 @@ lto = "fat"
 codegen-units = 1
 strip = "symbols"
 
+
+[patch.crates-io]
+bezel-ui = { path = "vendor/bezel-ui" }
+bezel-editor = { path = "vendor/bezel-editor" }

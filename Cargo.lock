@@ -726,8 +726,6 @@ dependencies = [
 [[package]]
 name = "bezel-editor"
 version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2462f40a0724b4db47a60e9fed043fa7ad39c678bba0cd613bb7da17269df1be"
 dependencies = [
  "bezel-gpui",
  "bezel-markdown",
@@ -1148,8 +1146,6 @@ dependencies = [
 [[package]]
 name = "bezel-ui"
 version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7f11af156086fb611ecd0dfd27b48502b062b19d0ad2ac27f997e68c4e29cac"
 dependencies = [
  "bezel-gpui",
  "bezel-icons",
