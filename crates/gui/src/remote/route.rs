@@ -34,19 +34,35 @@ pub fn standing(chat: &ChatSession, request: u64, option: &str) -> bool {
     })
 }
 
+fn plain(id: &str) -> Result<&str> {
+    anyhow::ensure!(
+        !id.is_empty()
+            && !id.starts_with('.')
+            && id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')),
+        "{id:?} is not a plain name"
+    );
+    Ok(id)
+}
+
 pub fn perform(store: &Store, action: &Action) -> Result<()> {
     match action {
         Action::CreateBoard { name, key, .. } => store.create_board(name, key).map(drop),
-        Action::SaveBoard { board, .. } => store.save_board(&mut toml::from_str::<Board>(board)?),
-        Action::RemoveBoard { id, .. } => store.remove_board(id),
+        Action::SaveBoard { board, .. } => {
+            let mut board = toml::from_str::<Board>(board)?;
+            plain(&board.id)?;
+            store.save_board(&mut board)
+        }
+        Action::RemoveBoard { id, .. } => store.remove_board(plain(id)?),
         Action::CreateArticle { markdown, .. } => store.create_article(markdown).map(drop),
-        Action::WriteArticle { id, markdown, .. } => store.write_article(id, markdown),
+        Action::WriteArticle { id, markdown, .. } => store.write_article(plain(id)?, markdown),
         Action::SaveProperties {
             id,
             properties: text,
             ..
         } => store.save_properties(id, &properties::parse(text)),
-        Action::RemoveArticle { id, .. } => store.remove_article(id),
+        Action::RemoveArticle { id, .. } => store.remove_article(plain(id)?),
         _ => Ok(()),
     }
 }

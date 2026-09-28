@@ -242,3 +242,56 @@ fn a_malformed_board_is_refused_and_nothing_changes() {
     assert!(super::route::perform(&store, &action).is_err());
     assert_eq!(store.board("road").unwrap().name, "Roadmap");
 }
+
+#[test]
+fn ids_that_climb_out_of_the_project_are_refused_before_touching_disk() {
+    let (dir, store) = fs_project("traversal");
+    let outside = dir
+        .parent()
+        .unwrap()
+        .join(format!("escaped-{}.toml", std::process::id()));
+    let _ = std::fs::remove_file(&outside);
+    let escape = format!(
+        "../../../{}",
+        outside.file_stem().unwrap().to_string_lossy()
+    );
+    let board = format!("id = {escape:?}\nname = \"Owned\"\nkey = \"OWN\"\n");
+    let project = project_of(&dir);
+    let attempts = [
+        remote::proto::Action::SaveBoard {
+            project: project.clone(),
+            board,
+        },
+        remote::proto::Action::RemoveBoard {
+            project: project.clone(),
+            id: escape.clone(),
+        },
+        remote::proto::Action::WriteArticle {
+            project: project.clone(),
+            id: escape.clone(),
+            markdown: "owned".into(),
+        },
+        remote::proto::Action::RemoveArticle {
+            project: project.clone(),
+            id: "..".into(),
+        },
+        remote::proto::Action::SaveProperties {
+            project,
+            id: "/etc".into(),
+            properties: String::new(),
+        },
+    ];
+    for attempt in &attempts {
+        assert!(
+            super::route::perform(&store, attempt).is_err(),
+            "{attempt:?}"
+        );
+    }
+    assert!(!outside.exists());
+    assert!(
+        std::fs::read_dir(dir.parent().unwrap())
+            .unwrap()
+            .flatten()
+            .all(|entry| { !entry.file_name().to_string_lossy().starts_with("escaped-") })
+    );
+}
