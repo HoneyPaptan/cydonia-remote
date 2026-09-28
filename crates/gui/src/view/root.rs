@@ -1633,7 +1633,7 @@ impl Cydonia {
 impl Render for Cydonia {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sync_leaves(window, cx);
-        self.sync_changes(cx);
+        self.sync_changes(window, cx);
         self.publish_shown(cx);
         let docked = self.sidebar_docked(window);
         let drawn = self.sidebar_open && !docked;

@@ -107,3 +107,41 @@ fn a_desktop_width_keeps_the_sidebar_docked_and_open(cx: &mut gpui::TestAppConte
     root.update(visual, open_first_article);
     assert!(root.read_with(visual, |root, _| root.sidebar_open));
 }
+
+fn panel_open(root: &gpui::Entity<Cydonia>, visual: &mut gpui::VisualTestContext) -> bool {
+    visual.update(|window, cx| {
+        root.update(cx, |root, cx| {
+            root.sync_changes(window, cx);
+            root.changes_open
+        })
+    })
+}
+
+#[gpui::test]
+fn a_phone_width_keeps_the_right_panel_down_on_arrival(cx: &mut gpui::TestAppContext) {
+    let scratch = Scratch::new("panel-phone");
+    let (root, visual) = open_at_width(390., &scratch, cx);
+
+    assert!(!panel_open(&root, visual), "the panel would hide the header");
+}
+
+#[gpui::test]
+fn a_phone_width_opens_the_right_panel_when_asked(cx: &mut gpui::TestAppContext) {
+    let scratch = Scratch::new("panel-ask");
+    let (root, visual) = open_at_width(390., &scratch, cx);
+    panel_open(&root, visual);
+
+    visual.update(|window, cx| {
+        root.update(cx, |root, cx| root.toggle_changes(&ToggleChanges, window, cx))
+    });
+
+    assert!(panel_open(&root, visual));
+}
+
+#[gpui::test]
+fn a_desktop_width_opens_the_right_panel_on_arrival(cx: &mut gpui::TestAppContext) {
+    let scratch = Scratch::new("panel-desktop");
+    let (root, visual) = open_at_width(1200., &scratch, cx);
+
+    assert!(panel_open(&root, visual), "a new directory opens with the panel up");
+}

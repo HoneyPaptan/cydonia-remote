@@ -889,7 +889,7 @@ impl Cydonia {
             return;
         }
         self.set_changes_open(true, cx);
-        self.sync_changes(cx);
+        self.sync_changes(window, cx);
         if let Some(panel) = self.changes.clone() {
             panel.update(cx, |panel, cx| {
                 panel.restore_tabs(window, cx);
@@ -918,7 +918,7 @@ impl Cydonia {
 
     pub(crate) fn show_files(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.set_changes_open(true, cx);
-        self.sync_changes(cx);
+        self.sync_changes(window, cx);
         if let Some(panel) = self.changes.clone() {
             panel.update(cx, |panel, cx| panel.files(window, cx));
         }
@@ -927,7 +927,7 @@ impl Cydonia {
 
     pub(crate) fn show_changes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.set_changes_open(true, cx);
-        self.sync_changes(cx);
+        self.sync_changes(window, cx);
         if let Some(panel) = self.changes.clone() {
             panel.update(cx, |panel, cx| {
                 panel.restore_tabs(window, cx);
@@ -948,7 +948,7 @@ impl Cydonia {
         if !self.changes_open {
             window.focus(&self.composer_focus_handle(cx), cx);
         } else {
-            self.sync_changes(cx);
+            self.sync_changes(window, cx);
             if let Some(panel) = self.changes.clone() {
                 panel.update(cx, |panel, cx| panel.focus(window, cx));
             }
@@ -983,7 +983,7 @@ impl Cydonia {
     /// with nothing written down for it opens with the panel up. A directory
     /// first seen this run is read off disk once and kept, which is what
     /// survives a quit.
-    fn follow_changes(&mut self, cx: &mut Context<Self>) {
+    fn follow_changes(&mut self, window: &Window, cx: &mut Context<Self>) {
         let active = self.shell_cwd(cx);
         if self.changes_for == active {
             return;
@@ -992,6 +992,7 @@ impl Cydonia {
             self.changes_shown.insert(previous, self.changes_open);
         }
         self.changes_open = match &active {
+            Some(_) if crate::view::root::narrow(window) => false,
             Some(cwd) => match self.changes_shown.get(cwd) {
                 Some(open) => *open,
                 None => {
@@ -1005,8 +1006,8 @@ impl Cydonia {
         self.changes_for = active;
     }
 
-    pub(crate) fn sync_changes(&mut self, cx: &mut Context<Self>) {
-        self.follow_changes(cx);
+    pub(crate) fn sync_changes(&mut self, window: &Window, cx: &mut Context<Self>) {
+        self.follow_changes(window, cx);
         let here = self.shell_cwd(cx);
         // A panel outlives the directory going out of front, and is dropped
         // once nothing open leads back to it — except while it holds work

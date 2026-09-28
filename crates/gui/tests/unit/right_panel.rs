@@ -70,7 +70,7 @@ fn an_article_and_a_board_in_one_project_share_its_panel(cx: &mut gpui::TestAppC
                 .update(cx, |workspace, cx| workspace.open_board(0, 0, cx));
             root.leaf_mut().pane = Pane::Board;
             assert_eq!(root.showing(cx), Some(Pane::Board));
-            root.sync_changes(cx);
+            root.sync_changes(window, cx);
 
             assert!(root.changes_open, "and stays up across the two");
             assert_eq!(
@@ -121,7 +121,7 @@ fn a_second_project_gets_a_panel_of_its_own(cx: &mut gpui::TestAppContext) {
             root.workspace
                 .update(cx, |workspace, cx| workspace.open_article(project, 0, cx));
             root.leaf_mut().pane = Pane::Article;
-            root.sync_changes(cx);
+            root.sync_changes(window, cx);
 
             assert!(
                 root.changes_open,
@@ -139,7 +139,7 @@ fn a_second_project_gets_a_panel_of_its_own(cx: &mut gpui::TestAppContext) {
             root.workspace
                 .update(cx, |workspace, cx| workspace.open_article(0, 0, cx));
             root.leaf_mut().pane = Pane::Article;
-            root.sync_changes(cx);
+            root.sync_changes(window, cx);
             assert!(root.changes_open, "left up, so it comes back up");
             assert_eq!(root.changes.as_ref(), Some(&first));
         })

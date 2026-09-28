@@ -786,6 +786,10 @@ impl Cydonia {
             self.terminal_height,
             f32::from(window.viewport_size().height),
         );
+        let covered_from = match root::narrow(window) {
+            true => root::HEADER_HEIGHT,
+            false => 0.,
+        };
         div()
             .id("session-panels")
             .relative()
@@ -843,7 +847,16 @@ impl Cydonia {
                         changes
                             .clone()
                             .filter(|_| !beside)
-                            .map(|panel| div().absolute().inset_0().bg(theme.bg).child(panel)),
+                            .map(|panel| {
+                            div()
+                                .absolute()
+                                .top(px(covered_from))
+                                .left_0()
+                                .right_0()
+                                .bottom_0()
+                                .bg(theme.bg)
+                                .child(panel)
+                        }),
                     )
                     // No split to drag when there is nothing beside anything.
                     .when(changes.is_some() && beside, |row| {
