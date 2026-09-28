@@ -54,6 +54,20 @@
 				if (event.pointerType === 'touch') event.stopImmediatePropagation();
 			}
 			window.addEventListener('pointerleave', keepLiftedFingersFromLeavingTheCanvas, true);
+
+			function scaleTheInterface(scale) {
+				const ratio = window.devicePixelRatio;
+				Object.defineProperty(window, 'devicePixelRatio', { get: () => ratio * scale });
+				for (const axis of ['offsetX', 'offsetY', 'clientX', 'clientY']) {
+					const read = Object.getOwnPropertyDescriptor(MouseEvent.prototype, axis).get;
+					Object.defineProperty(MouseEvent.prototype, axis, {
+						get() {
+							return read.call(this) / scale;
+						},
+					});
+				}
+			}
+			if (matchMedia('(pointer: coarse)').matches) scaleTheInterface(1.25);
 		</script>
 		<script type="module">
 			import init from './cydonia_mobile.js';

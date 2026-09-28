@@ -25,7 +25,7 @@ use crate::{
 };
 use artifact::board::Board;
 use bezel::{
-    gpui::{App, ClipboardItem, Context, EntityId, EventEmitter, Window},
+    gpui::{App, ClipboardItem, Context, EntityId, EventEmitter, Global, Window},
     theme::{self, Brand, Tint, Vibrancy, appearance::AppearanceMode},
     ui::{icons::Icon, input},
 };
@@ -796,11 +796,15 @@ pub fn apply_wrap_code(wrap: bool, cx: &mut App) {
 /// Hand the answer to bezel, which reapplies it on every light/dark switch
 /// from then on — including the one the OS makes at sunset, which reaches
 /// nothing of ours.
+pub struct NoBackdropBlur;
+
+impl Global for NoBackdropBlur {}
+
 pub fn apply_transparency(opaque: Option<bool>, cx: &mut App) {
     theme::set_brand(
         Brand {
             vibrancy: vibrancy(opaque),
-            glass: glass(opaque),
+            glass: glass(opaque) && !cx.has_global::<NoBackdropBlur>(),
             ..theme::brand(cx)
         },
         cx,

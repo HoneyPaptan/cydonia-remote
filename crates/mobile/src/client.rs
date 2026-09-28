@@ -13,7 +13,7 @@ use gui::{
     boot,
     model::{
         sink::{Sink, Write},
-        workspace::Workspace,
+        workspace::{NoBackdropBlur, Workspace},
     },
     view::root,
 };
@@ -272,6 +272,7 @@ async fn boot() -> Result<(), String> {
             {
                 show(&format!("font registration failed: {error:?}"));
             }
+            cx.set_global(NoBackdropBlur);
             boot::init(&settings, cx);
             let window = root::open(settings, state, cx).expect("failed to open the window");
             let workspace = window
