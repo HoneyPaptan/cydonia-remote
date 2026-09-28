@@ -51,6 +51,42 @@ pub struct Project {
 }
 
 impl Project {
+    pub fn create_board_as(&self, id: &str, name: &str, key: &str) -> Result<Board> {
+        let dir = self.init()?.join(BOARDS);
+        std::fs::create_dir_all(&dir)?;
+        anyhow::ensure!(!self.board_file(component(id)?).exists(), "board {id} exists");
+        let mut board = Board::new(id.to_owned(), name);
+
+        board.key = match key::normalize(key) {
+            Some(key) => key,
+            // Nothing given, so it is derived from the name — against what the
+            // project's other boards are already keyed, so it is clear of
+            // them. Reading them is also what settles any key they are still
+            // missing.
+            None => {
+                let taken: HashSet<String> =
+                    super::Project::boards(self).into_iter().map(|board| board.key).collect();
+                key::derive(&board.name, &taken)
+            }
+        };
+        board.number = super::Project::number(self, "board", &board.id).ok();
+        super::Project::save_board(self, &mut board)?;
+        Ok(board)
+    }
+
+    pub fn create_article_as(&self, id: &str, markdown: &str) -> Result<Article> {
+        let dir = article::init(&self.root)?;
+        let landing = dir.join(component(id)?);
+        anyhow::ensure!(!landing.exists(), "article {id} exists");
+        self.create_article_in(&landing, markdown)
+    }
+
+    fn create_article_in(&self, landing: &Path, markdown: &str) -> Result<Article> {
+        std::fs::create_dir_all(landing)?;
+        let content = article::content(landing);
+        std::fs::write(&content, markdown)?;
+        Ok(self.describe(&content))
+    }
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self { root: root.into() }
     }
@@ -271,22 +307,7 @@ impl super::Project for Project {
     fn create_board(&self, name: &str, key: &str) -> Result<Board> {
         let dir = self.init()?.join(BOARDS);
         std::fs::create_dir_all(&dir)?;
-        let mut board = Board::new(stem(&free(&dir, stamp::now())), name);
-        board.key = match key::normalize(key) {
-            Some(key) => key,
-            // Nothing given, so it is derived from the name — against what the
-            // project's other boards are already keyed, so it is clear of
-            // them. Reading them is also what settles any key they are still
-            // missing.
-            None => {
-                let taken: HashSet<String> =
-                    self.boards().into_iter().map(|board| board.key).collect();
-                key::derive(&board.name, &taken)
-            }
-        };
-        board.number = self.number("board", &board.id).ok();
-        self.save_board(&mut board)?;
-        Ok(board)
+        self.create_board_as(&stem(&free(&dir, stamp::now())), name, key)
     }
 
     /// The check and the write happen under an exclusive lock on the file,
@@ -403,11 +424,7 @@ impl super::Project for Project {
 
     fn create_article(&self, markdown: &str) -> Result<Article> {
         let dir = article::init(&self.root)?;
-        let landing = article::free(&dir, stamp::now());
-        std::fs::create_dir_all(&landing)?;
-        let content = article::content(&landing);
-        std::fs::write(&content, markdown)?;
-        Ok(self.describe(&content))
+        self.create_article_in(&article::free(&dir, stamp::now()), markdown)
     }
 
     fn read_article(&self, id: &str) -> Result<String> {

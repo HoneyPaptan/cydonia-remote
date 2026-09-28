@@ -49,6 +49,12 @@ fn plain(id: &str) -> Result<&str> {
 
 pub fn perform(store: &Store, action: &Action) -> Result<()> {
     match action {
+        Action::CreateBoard {
+            name,
+            key,
+            id: Some(id),
+            ..
+        } => store.create_board_as(plain(id)?, name, key).map(drop),
         Action::CreateBoard { name, key, .. } => store.create_board(name, key).map(drop),
         Action::SaveBoard { board, .. } => {
             let mut board = toml::from_str::<Board>(board)?;
@@ -56,6 +62,11 @@ pub fn perform(store: &Store, action: &Action) -> Result<()> {
             store.save_board(&mut board)
         }
         Action::RemoveBoard { id, .. } => store.remove_board(plain(id)?),
+        Action::CreateArticle {
+            markdown,
+            id: Some(id),
+            ..
+        } => store.create_article_as(plain(id)?, markdown).map(drop),
         Action::CreateArticle { markdown, .. } => store.create_article(markdown).map(drop),
         Action::WriteArticle { id, markdown, .. } => store.write_article(plain(id)?, markdown),
         Action::SaveProperties {

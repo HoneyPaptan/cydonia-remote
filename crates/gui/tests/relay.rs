@@ -26,7 +26,7 @@ impl Sink for Recorder {
             Write::CreateBoard { name, .. } => format!("create board {name}"),
             Write::SaveBoard(board) => format!("save board {}", board.name),
             Write::RemoveBoard(id) => format!("remove board {id}"),
-            Write::CreateArticle(_) => "create article".to_owned(),
+            Write::CreateArticle { .. } => "create article".to_owned(),
             Write::WriteArticle { markdown, .. } => format!("write article {markdown}"),
             Write::SaveProperties { .. } => "save properties".to_owned(),
             Write::RemoveArticle(_) => "remove article".to_owned(),

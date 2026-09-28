@@ -102,13 +102,27 @@ impl Store {
         }
     }
 
+    pub fn create_board_as(&self, id: &str, name: &str, key: &str) -> Result<Board> {
+        match self {
+            Store::Fs(store) => store.create_board_as(id, name, key),
+            _ => self.create_board(name, key),
+        }
+    }
+
+    pub fn create_article_as(&self, id: &str, markdown: &str) -> Result<Article> {
+        match self {
+            Store::Fs(store) => store.create_article_as(id, markdown),
+            _ => self.create_article(markdown),
+        }
+    }
+
     pub fn set_cover(&self, id: &str, cover: Option<(String, Vec<u8>)>) -> Result<()> {
         match self {
             Store::Fs(_) => Ok(()),
             Store::Memory(store) => store.set_cover(id, cover),
             Store::Relayed(store, _) => {
                 let held = cover.clone();
-                self.relayed(store.set_cover(id, held), || Write::SetCover {
+                self.relayed(store.set_cover(id, held), |_| Write::SetCover {
                     id: id.to_owned(),
                     cover,
                 })
@@ -116,11 +130,11 @@ impl Store {
         }
     }
 
-    fn relayed<T>(&self, done: Result<T>, write: impl FnOnce() -> Write) -> Result<T> {
-        if done.is_ok()
+    fn relayed<T>(&self, done: Result<T>, write: impl FnOnce(&T) -> Write) -> Result<T> {
+        if let Ok(value) = &done
             && let (Store::Relayed(_, path), Some(sink)) = (self, sink::get())
         {
-            sink.write(path, write());
+            sink.write(path, write(value));
         }
         done
     }
@@ -136,8 +150,9 @@ impl Project for Store {
     }
 
     fn create_board(&self, name: &str, key: &str) -> Result<Board> {
-        self.relayed(each!(self, store => store.create_board(name, key)), || {
+        self.relayed(each!(self, store => store.create_board(name, key)), |board| {
             Write::CreateBoard {
+                id: board.id.clone(),
                 name: name.to_owned(),
                 key: key.to_owned(),
             }
@@ -145,13 +160,13 @@ impl Project for Store {
     }
 
     fn save_board(&self, board: &mut Board) -> Result<()> {
-        self.relayed(each!(self, store => store.save_board(board)), || {
+        self.relayed(each!(self, store => store.save_board(board)), |_| {
             Write::SaveBoard(board.clone())
         })
     }
 
     fn remove_board(&self, id: &str) -> Result<()> {
-        self.relayed(each!(self, store => store.remove_board(id)), || {
+        self.relayed(each!(self, store => store.remove_board(id)), |_| {
             Write::RemoveBoard(id.to_owned())
         })
     }
@@ -185,8 +200,11 @@ impl Project for Store {
     }
 
     fn create_article(&self, markdown: &str) -> Result<Article> {
-        self.relayed(each!(self, store => store.create_article(markdown)), || {
-            Write::CreateArticle(markdown.to_owned())
+        self.relayed(each!(self, store => store.create_article(markdown)), |article| {
+            Write::CreateArticle {
+                id: article.id.clone(),
+                markdown: markdown.to_owned(),
+            }
         })
     }
 
@@ -197,7 +215,7 @@ impl Project for Store {
     fn write_article(&self, id: &str, markdown: &str) -> Result<()> {
         self.relayed(
             each!(self, store => store.write_article(id, markdown)),
-            || Write::WriteArticle {
+            |_| Write::WriteArticle {
                 id: id.to_owned(),
                 markdown: markdown.to_owned(),
             },
@@ -211,7 +229,7 @@ impl Project for Store {
     fn save_properties(&self, id: &str, properties: &Properties) -> Result<()> {
         self.relayed(
             each!(self, store => store.save_properties(id, properties)),
-            || Write::SaveProperties {
+            |_| Write::SaveProperties {
                 id: id.to_owned(),
                 properties: properties.clone(),
             },
@@ -219,7 +237,7 @@ impl Project for Store {
     }
 
     fn remove_article(&self, id: &str) -> Result<()> {
-        self.relayed(each!(self, store => store.remove_article(id)), || {
+        self.relayed(each!(self, store => store.remove_article(id)), |_| {
             Write::RemoveArticle(id.to_owned())
         })
     }

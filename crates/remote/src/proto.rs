@@ -207,6 +207,8 @@ pub enum Action {
         project: String,
         name: String,
         key: String,
+        #[serde(default)]
+        id: Option<String>,
     },
     SaveBoard {
         project: String,
@@ -219,6 +221,8 @@ pub enum Action {
     CreateArticle {
         project: String,
         markdown: String,
+        #[serde(default)]
+        id: Option<String>,
     },
     WriteArticle {
         project: String,

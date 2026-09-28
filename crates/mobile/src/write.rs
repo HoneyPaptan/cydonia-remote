@@ -4,13 +4,22 @@ use remote::proto::{Action, Cover, File};
 
 pub fn action(project: String, write: Write) -> Option<Action> {
     Some(match write {
-        Write::CreateBoard { name, key } => Action::CreateBoard { project, name, key },
+        Write::CreateBoard { id, name, key } => Action::CreateBoard {
+            project,
+            name,
+            key,
+            id: Some(id),
+        },
         Write::SaveBoard(board) => Action::SaveBoard {
             project,
             board: toml::to_string(&board).ok()?,
         },
         Write::RemoveBoard(id) => Action::RemoveBoard { project, id },
-        Write::CreateArticle(markdown) => Action::CreateArticle { project, markdown },
+        Write::CreateArticle { id, markdown } => Action::CreateArticle {
+            project,
+            markdown,
+            id: Some(id),
+        },
         Write::WriteArticle { id, markdown } => Action::WriteArticle {
             project,
             id,

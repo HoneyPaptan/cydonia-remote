@@ -216,6 +216,7 @@ fn articles_created_and_written_from_the_phone_land_on_disk() {
         &remote::proto::Action::CreateArticle {
             project: project_of(&dir),
             markdown: "# Plan".into(),
+            id: None,
         },
     )
     .unwrap();
@@ -230,6 +231,48 @@ fn articles_created_and_written_from_the_phone_land_on_disk() {
     )
     .unwrap();
     assert_eq!(store.read_article(&id).unwrap(), "# Plan\n\nShip it.");
+}
+
+#[test]
+fn a_board_made_on_the_phone_keeps_the_phone_id() {
+    let (dir, store) = fs_project("board-id");
+    let create = remote::proto::Action::CreateBoard {
+        project: project_of(&dir),
+        name: "Test".into(),
+        key: "TES".into(),
+        id: Some("1790628691042".into()),
+    };
+    super::route::perform(&store, &create).unwrap();
+    assert_eq!(store.board("1790628691042").unwrap().name, "Test");
+    assert!(super::route::perform(&store, &create).is_err());
+    assert_eq!(store.boards().len(), 2);
+}
+
+#[test]
+fn an_article_made_on_the_phone_keeps_the_phone_id() {
+    let (dir, store) = fs_project("article-id");
+    let create = remote::proto::Action::CreateArticle {
+        project: project_of(&dir),
+        markdown: "# Plan".into(),
+        id: Some("1790628691042".into()),
+    };
+    super::route::perform(&store, &create).unwrap();
+    assert_eq!(store.read_article("1790628691042").unwrap(), "# Plan");
+    assert!(super::route::perform(&store, &create).is_err());
+    assert_eq!(store.articles().len(), 1);
+}
+
+#[test]
+fn a_phone_id_that_is_a_path_is_refused() {
+    let (dir, store) = fs_project("board-path");
+    let create = remote::proto::Action::CreateBoard {
+        project: project_of(&dir),
+        name: "Test".into(),
+        key: "TES".into(),
+        id: Some("../settings".into()),
+    };
+    assert!(super::route::perform(&store, &create).is_err());
+    assert_eq!(store.boards().len(), 1);
 }
 
 #[test]

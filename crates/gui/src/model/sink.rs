@@ -2,10 +2,10 @@ use artifact::{article::properties::Properties, board::Board};
 use std::{cell::RefCell, path::Path, rc::Rc};
 
 pub enum Write {
-    CreateBoard { name: String, key: String },
+    CreateBoard { id: String, name: String, key: String },
     SaveBoard(Board),
     RemoveBoard(String),
-    CreateArticle(String),
+    CreateArticle { id: String, markdown: String },
     WriteArticle { id: String, markdown: String },
     SaveProperties { id: String, properties: Properties },
     RemoveArticle(String),

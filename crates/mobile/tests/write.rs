@@ -25,11 +25,15 @@ fn a_saved_board_travels_as_toml_the_laptop_can_read_back() {
 fn every_write_names_its_project() {
     let writes = vec![
         Write::CreateBoard {
+            id: "1".into(),
             name: "A".into(),
             key: "A".into(),
         },
         Write::RemoveBoard("road".into()),
-        Write::CreateArticle("# A".into()),
+        Write::CreateArticle {
+            id: "2".into(),
+            markdown: "# A".into(),
+        },
         Write::WriteArticle {
             id: "1".into(),
             markdown: "# B".into(),
