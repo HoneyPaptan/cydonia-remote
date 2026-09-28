@@ -18,6 +18,7 @@ impl Sink for Recorder {
     fn set_mode(&self, _: &Path, _: &str, _: String) {}
     fn set_config(&self, _: &Path, _: &str, _: String, _: String) {}
     fn new_session(&self, _: &Path, _: &str, _: Option<String>) {}
+    fn session(&self, _: &Path, _: &str, _: sink::SessionChange) {}
     fn write(&self, project: &Path, write: Write) {
         let what = match write {
             Write::CreateBoard { name, .. } => format!("create board {name}"),

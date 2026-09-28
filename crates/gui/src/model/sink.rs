@@ -12,6 +12,12 @@ pub enum Write {
     SetCover { id: String, cover: Option<(String, Vec<u8>)> },
 }
 
+pub enum SessionChange {
+    Rename(String),
+    Archive(bool),
+    Remove,
+}
+
 pub trait Sink {
     fn send_prompt(&self, project: &Path, record: &str, text: String);
     fn cancel(&self, project: &Path, record: &str);
@@ -20,6 +26,7 @@ pub trait Sink {
     fn set_config(&self, project: &Path, record: &str, config: String, value: String);
     fn new_session(&self, project: &Path, agent: &str, text: Option<String>);
     fn write(&self, project: &Path, write: Write);
+    fn session(&self, project: &Path, record: &str, change: SessionChange);
 }
 
 thread_local! {

@@ -234,6 +234,17 @@ pub enum Action {
         id: String,
         cover: Option<Cover>,
     },
+    RenameSession {
+        key: SessionKey,
+        name: String,
+    },
+    ArchiveSession {
+        key: SessionKey,
+        archived: bool,
+    },
+    RemoveSession {
+        key: SessionKey,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

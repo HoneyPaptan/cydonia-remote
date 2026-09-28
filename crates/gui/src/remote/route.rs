@@ -195,6 +195,27 @@ pub fn route(workspace: &mut Workspace, action: Action, cx: &mut Context<Workspa
                 None => rejected(Reason::Unavailable),
             }
         }
+        Action::RenameSession { key, name } => {
+            let Some(id) = find(&workspace.projects, &key) else {
+                return rejected(Reason::UnknownSession);
+            };
+            workspace.rename_session(id, name, cx);
+            Outcome::Accepted
+        }
+        Action::ArchiveSession { key, archived } => {
+            let Some(id) = find(&workspace.projects, &key) else {
+                return rejected(Reason::UnknownSession);
+            };
+            workspace.archive_session(id, archived, cx);
+            Outcome::Accepted
+        }
+        Action::RemoveSession { key } => {
+            let Some(id) = find(&workspace.projects, &key) else {
+                return rejected(Reason::UnknownSession);
+            };
+            workspace.close_session(id, cx);
+            Outcome::Accepted
+        }
         _ => rejected(Reason::Invalid),
     }
 }

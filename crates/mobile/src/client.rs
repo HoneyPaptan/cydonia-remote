@@ -12,7 +12,7 @@ use futures::{
 use gui::{
     boot,
     model::{
-        sink::{Sink, Write},
+        sink::{SessionChange, Sink, Write},
         workspace::{NoBackdropBlur, Workspace},
     },
     view::root::{self, Cydonia},
@@ -172,6 +172,15 @@ impl Sink for Commands {
         if let Some(action) = crate::write::action(project.to_string_lossy().into_owned(), write) {
             self.deliver(action);
         }
+    }
+
+    fn session(&self, project: &Path, record: &str, change: SessionChange) {
+        let key = key(project, record);
+        self.deliver(match change {
+            SessionChange::Rename(name) => Action::RenameSession { key, name },
+            SessionChange::Archive(archived) => Action::ArchiveSession { key, archived },
+            SessionChange::Remove => Action::RemoveSession { key },
+        });
     }
 
     fn new_session(&self, project: &Path, agent: &str, text: Option<String>) {

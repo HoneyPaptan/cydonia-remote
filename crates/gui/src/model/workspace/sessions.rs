@@ -4,6 +4,7 @@
 //! `use super::*`: these methods work on the same struct and reach the same
 //! names as the rest of it.
 use super::*;
+use crate::model::sink::SessionChange;
 use artifact::{project::Project as _, session::record::Record};
 
 impl Workspace {
@@ -357,6 +358,10 @@ impl Workspace {
     /// Put a session away, or bring it back. Closing tears the agent down and
     /// keeps the transcript; opening it again is what reconnects.
     pub fn archive_session(&mut self, id: u64, archived: bool, cx: &mut Context<Self>) {
+        if self.relay_session(id, SessionChange::Archive(archived)) {
+            self.with_session(id, cx, |chat| chat.closed = archived);
+            return;
+        }
         self.with_session(id, cx, |chat| match archived {
             true => chat.close(),
             false => {
@@ -371,6 +376,7 @@ impl Workspace {
     }
 
     pub fn rename_session(&mut self, id: u64, name: String, cx: &mut Context<Self>) {
+        self.relay_session(id, SessionChange::Rename(name.clone()));
         self.with_session(id, cx, |chat| {
             let name = name.trim();
             chat.name = (!name.is_empty()).then(|| name.to_owned());
@@ -379,7 +385,22 @@ impl Workspace {
         self.prune_archived(cx);
     }
 
+    fn relay_session(&self, id: u64, change: SessionChange) -> bool {
+        let Some(sink) = crate::model::sink::get() else {
+            return false;
+        };
+        let Some(project) = self.project_of(id).map(|ix| &self.projects[ix]) else {
+            return false;
+        };
+        let Some(record) = project.session(id).and_then(|chat| chat.record.as_deref()) else {
+            return false;
+        };
+        sink.session(&project.path, record, change);
+        true
+    }
+
     pub fn close_session(&mut self, id: u64, cx: &mut Context<Self>) {
+        self.relay_session(id, SessionChange::Remove);
         let Some(project) = self.project_of(id).map(|ix| &mut self.projects[ix]) else {
             return;
         };
