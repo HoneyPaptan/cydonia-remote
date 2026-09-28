@@ -171,6 +171,9 @@ class MainActivity : Activity() {
       setBackgroundColor(Color.BLACK)
       setLayerType(View.LAYER_TYPE_HARDWARE, null)
       setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, true)
+      isLongClickable = false
+      isHapticFeedbackEnabled = false
+      setOnLongClickListener { true }
       settings.offscreenPreRaster = true
       settings.javaScriptEnabled = true
       settings.domStorageEnabled = true
