@@ -80,14 +80,41 @@ fn nothing_outside_an_open_project_is_reached() {
     assert!(laptop.shell(&scratch.path("elsewhere"), 80, 24).is_none());
 }
 
+fn words(words: &[&str]) -> Vec<String> {
+    words.iter().map(|word| word.to_string()).collect()
+}
+
 #[test]
-fn only_read_only_git_commands_are_relayed() {
-    assert!(allowed(&["status".into(), "--porcelain=v1".into()]));
-    assert!(allowed(&["diff".into(), "--no-ext-diff".into()]));
-    assert!(!allowed(&["diff".into(), "--output=/tmp/x".into()]));
-    assert!(!allowed(&["diff".into(), "--ext-diff".into()]));
-    assert!(!allowed(&["push".into()]));
-    assert!(!allowed(&[]));
+fn the_git_calls_cydonia_makes_are_relayed() {
+    for args in [
+        &["rev-parse", "--show-toplevel"][..],
+        &["status", "--porcelain=v1", "--renames", "-z", "--untracked-files=all", "--ignore-submodules=none"],
+        &["diff", "--no-ext-diff", "--no-textconv", "--no-color", "--submodule=short", "--", "src/main.rs"],
+        &["diff", "--no-ext-diff", "--cached", "--", "new.rs", "old.rs"],
+        &["diff", "--no-ext-diff", "--no-index", "--", "/dev/null", "src/new.rs"],
+        &["cat-file", "blob", "HEAD:src/main.rs"],
+    ] {
+        assert!(allowed(&words(args)), "{args:?}");
+    }
+}
+
+#[test]
+fn git_cannot_reach_outside_the_project_or_write() {
+    for args in [
+        &["diff", "--no-index", "--", "/dev/null", "/etc/passwd"][..],
+        &["diff", "--no-index", "--", "/dev/null", "../../etc/passwd"],
+        &["diff", "--", "/etc/passwd"],
+        &["diff", "--output=/tmp/x", "--", "a"],
+        &["diff", "--ext-diff", "--", "a"],
+        &["diff", "--no-index", "/dev/null", "/etc/passwd"],
+        &["status", "--porcelain=v1", "--exec-path=/tmp"],
+        &["cat-file", "blob", "--batch"],
+        &["rev-parse", "--git-dir"],
+        &["push"],
+        &[],
+    ] {
+        assert!(!allowed(&words(args)), "{args:?}");
+    }
 }
 
 #[test]

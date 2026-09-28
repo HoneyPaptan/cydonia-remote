@@ -19,8 +19,24 @@ use std::{
 use terminal::emulator::{CellColor, CellSnapshot, Emulator};
 
 const FILE_LIMIT: u64 = 256 * 1024;
-const GIT_COMMANDS: [&str; 4] = ["rev-parse", "status", "diff", "cat-file"];
-const GIT_REFUSED: [&str; 4] = ["--output", "--ext-diff", "--textconv", "--exec"];
+const STATUS: [&str; 6] = [
+    "--porcelain=v1",
+    "--renames",
+    "-z",
+    "--untracked-files=all",
+    "--ignore-submodules=none",
+    "status",
+];
+const DIFF: [&str; 7] = [
+    "diff",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--no-color",
+    "--submodule=short",
+    "--cached",
+    "--no-index",
+];
+const NULL: &str = "/dev/null";
 const SETTLE: Duration = Duration::from_millis(12);
 
 pub struct Laptop {
@@ -101,12 +117,38 @@ fn write_file(path: &Path, text: &str) -> Answer {
     }
 }
 
+fn inside_path(arg: &str) -> bool {
+    let path = Path::new(arg);
+    !arg.is_empty()
+        && !arg.starts_with('-')
+        && path.is_relative()
+        && path
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_) | std::path::Component::CurDir))
+}
+
+fn diff_allowed(args: &[String]) -> bool {
+    let Some(split) = args.iter().position(|arg| arg == "--") else {
+        return false;
+    };
+    let (flags, paths) = (&args[1..split], &args[split + 1..]);
+    let no_index = flags.iter().any(|flag| flag == "--no-index");
+    let paths_allowed = match no_index {
+        true => paths.len() == 2 && paths[0] == NULL && inside_path(&paths[1]),
+        false => (1..=2).contains(&paths.len()) && paths.iter().all(|path| inside_path(path)),
+    };
+    flags.iter().all(|flag| DIFF[1..].contains(&flag.as_str())) && paths_allowed
+}
+
 fn allowed(args: &[String]) -> bool {
-    args.first()
-        .is_some_and(|command| GIT_COMMANDS.contains(&command.as_str()))
-        && !args
-            .iter()
-            .any(|arg| GIT_REFUSED.iter().any(|refused| arg.starts_with(refused)))
+    let words: Vec<&str> = args.iter().map(String::as_str).collect();
+    match words.as_slice() {
+        ["rev-parse", "--show-toplevel"] => true,
+        ["status", flags @ ..] => flags.iter().all(|flag| STATUS[..5].contains(flag)),
+        ["diff", ..] => diff_allowed(args),
+        ["cat-file", "blob", spec] => !spec.starts_with('-') && !spec.contains(".."),
+        _ => false,
+    }
 }
 
 fn run_git(cwd: &Path, args: &[String]) -> Answer {
