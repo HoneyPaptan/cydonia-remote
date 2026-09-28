@@ -561,6 +561,12 @@ impl<V: 'static> Tree<V> {
                             .on_mouse_move(self.reports(Hit::Point(path.clone()), cx))
                             .on_click(self.reports(
                                 match item {
+                                    Item::Submenu { .. }
+                                        if down == Some(row)
+                                            && cx.has_global::<crate::tooltip::Hidden>() =>
+                                    {
+                                        Hit::Point(prefix.to_vec())
+                                    }
                                     // Clicking a submenu row opens it; there is
                                     // nothing else it could mean.
                                     Item::Submenu { .. } => Hit::Point(path.clone()),
