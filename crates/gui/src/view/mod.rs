@@ -11,6 +11,7 @@ pub mod component;
 pub mod confirm;
 pub mod create;
 pub mod desktop;
+pub mod folders;
 pub mod detail;
 pub mod find;
 pub mod header;

@@ -523,6 +523,7 @@ pub struct Cydonia {
     /// The board that has been asked for and not yet made — see
     /// [`create::Making`].
     pub(crate) making: Option<create::Making>,
+    pub(crate) browsing: Option<crate::view::folders::Browsing>,
     /// Whether the press now being handled landed on the name of the board
     /// whose panel is open — read by [`Cydonia::toggle_info`] and nothing else,
     /// the way [`Cydonia::menu_pressed`] is read by `toggle_menu`.
@@ -1038,6 +1039,7 @@ impl Cydonia {
             desktop_only: None,
             info: None,
             making: None,
+            browsing: None,
             info_pressed: false,
             menu: None,
             menu_point: None,
@@ -1315,6 +1317,11 @@ impl Cydonia {
 
     pub(crate) fn close_project(&mut self, ix: usize, cx: &mut Context<Self>) {
         self.commit(cx);
+        if let Some(sink) = crate::model::sink::get()
+            && let Some(open) = self.workspace.read(cx).projects.get(ix)
+        {
+            sink.project(&open.path, false);
+        }
         self.workspace
             .update(cx, |workspace, cx| workspace.close_project(ix, cx));
     }
@@ -1543,6 +1550,10 @@ impl Cydonia {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if crate::model::relay::installed() {
+            self.browse_folders(cx);
+            return;
+        }
         if cfg!(not(feature = "desktop")) {
             self.desktop_only("Opening a project", cx);
             return;
@@ -1702,6 +1713,8 @@ impl Render for Cydonia {
             .on_action(cx.listener(Self::dismiss_info))
             .on_action(cx.listener(Self::make_board))
             .on_action(cx.listener(Self::dismiss_new_board))
+            .on_action(cx.listener(Self::make_folder))
+            .on_action(cx.listener(Self::dismiss_folders))
             .on_action(cx.listener(Self::dismiss_name))
             // Everything the menu bar names, and only under the conditions
             // that keep its items honest.
@@ -1748,6 +1761,7 @@ impl Render for Cydonia {
             .children(self.settings_sheet(window, cx))
             .children(self.desktop_only_notice(cx))
             .children(self.new_board_dialog(cx))
+            .children(self.folder_picker(window, cx))
             .children(self.quick_actions(window, cx));
         bezel::ui::window::frame(root, window, cx)
     }

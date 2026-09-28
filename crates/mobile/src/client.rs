@@ -193,6 +193,14 @@ impl Sink for Commands {
         });
     }
 
+    fn project(&self, path: &Path, open: bool) {
+        let path = path.to_string_lossy().into_owned();
+        self.deliver(match open {
+            true => Action::OpenProject { path },
+            false => Action::CloseProject { path },
+        });
+    }
+
     fn session(&self, project: &Path, record: &str, change: SessionChange) {
         let key = key(project, record);
         self.deliver(match change {

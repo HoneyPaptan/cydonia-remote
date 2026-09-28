@@ -128,3 +128,51 @@ fn a_screen_keeps_colours_and_drops_trailing_blanks() {
     assert!(screen.rows[1].is_empty());
     assert_eq!(screen.cursor, Some((0, 9)));
 }
+
+fn listed(answer: Answer) -> Folders {
+    match answer {
+        Answer::Folders(folders) => folders,
+        other => panic!("expected folders, got {other:?}"),
+    }
+}
+
+#[test]
+fn folders_anywhere_on_the_laptop_are_listed_without_hidden_ones() {
+    let scratch = Scratch::new("folders");
+    std::fs::create_dir_all(scratch.0.join("elsewhere/.cache")).unwrap();
+    std::fs::create_dir_all(scratch.0.join("elsewhere/Beta")).unwrap();
+    std::fs::create_dir_all(scratch.0.join("elsewhere/alpha")).unwrap();
+    let laptop = scratch.laptop();
+
+    let here = listed(laptop.answer(Query::Folders {
+        path: scratch.path("elsewhere"),
+    }));
+
+    assert_eq!(here.folders, ["alpha", "Beta"]);
+    assert_eq!(here.parent.as_deref(), Some(scratch.0.to_string_lossy().as_ref()));
+}
+
+#[test]
+fn a_folder_is_made_and_then_listed() {
+    let scratch = Scratch::new("make");
+    let laptop = scratch.laptop();
+    let path = scratch.path("elsewhere/fresh");
+
+    let made = listed(laptop.answer(Query::MakeFolder { path: path.clone() }));
+    assert_eq!(made.path, path);
+    assert!(scratch.0.join("elsewhere/fresh").is_dir());
+
+    let again = laptop.answer(Query::MakeFolder { path });
+    assert!(matches!(again, Answer::Failed { .. }), "an existing name is refused");
+}
+
+#[test]
+fn folder_paths_must_be_full_and_plain() {
+    let scratch = Scratch::new("plain");
+    let laptop = scratch.laptop();
+    for path in ["relative/dir".to_owned(), scratch.path("project/../elsewhere")] {
+        let answer = laptop.answer(Query::MakeFolder { path: path.clone() });
+        assert!(matches!(answer, Answer::Failed { .. }), "{path} was accepted");
+    }
+    assert!(!scratch.0.join("relative").exists());
+}

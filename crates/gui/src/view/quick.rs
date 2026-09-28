@@ -1,6 +1,6 @@
 use crate::view::{
     component::panel::Launch,
-    root::{Cydonia, NewArticle, NewBoard, NewSession, content_bg, narrow},
+    root::{Cydonia, NewArticle, NewBoard, NewSession, OpenProject, content_bg, narrow},
 };
 use bezel::{
     gpui::{AnyElement, Context, Window, div, prelude::*, px},
@@ -13,12 +13,13 @@ enum Quick {
     Session,
     Article,
     Board,
+    Project,
     Tool(Launch),
 }
 
 impl Quick {
     fn all() -> impl Iterator<Item = Self> {
-        [Self::Session, Self::Article, Self::Board]
+        [Self::Session, Self::Article, Self::Board, Self::Project]
             .into_iter()
             .chain(Launch::ALL.map(Self::Tool))
     }
@@ -28,6 +29,7 @@ impl Quick {
             Self::Session => "New session",
             Self::Article => "New article",
             Self::Board => "New board",
+            Self::Project => "Open project",
             Self::Tool(launch) => launch.label(),
         }
     }
@@ -37,6 +39,7 @@ impl Quick {
             Self::Session => icons::social::MessageCirclePlus,
             Self::Article => icons::files::FilePlus,
             Self::Board => icons::development::SquareKanban,
+            Self::Project => icons::files::FolderOpen,
             Self::Tool(launch) => launch.icon(),
         }
     }
@@ -56,7 +59,7 @@ impl Cydonia {
 
     fn quick_ready(&self, quick: Quick, cx: &Context<Self>) -> bool {
         match quick {
-            Quick::Session => true,
+            Quick::Session | Quick::Project => true,
             Quick::Article | Quick::Board => self.workspace.read(cx).active.is_some(),
             Quick::Tool(_) => self.shell_cwd(cx).is_some(),
         }
@@ -71,6 +74,7 @@ impl Cydonia {
             Quick::Session => self.new_session_action(&NewSession, window, cx),
             Quick::Article => self.new_article_action(&NewArticle, window, cx),
             Quick::Board => self.new_board_action(&NewBoard, window, cx),
+            Quick::Project => self.open_project_action(&OpenProject, window, cx),
             Quick::Tool(launch) => self.launch_tool(launch, window, cx),
         }
         cx.notify();

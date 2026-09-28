@@ -258,6 +258,25 @@ pub fn route(workspace: &mut Workspace, action: Action, cx: &mut Context<Workspa
             agent_job(id, cx, |id| crate::agent::remove(&id));
             Outcome::Accepted
         }
+        Action::OpenProject { path } => {
+            let path = PathBuf::from(path);
+            if !path.is_absolute() || !path.is_dir() {
+                return rejected(Reason::Invalid);
+            }
+            workspace.open_project(path, cx);
+            Outcome::Accepted
+        }
+        Action::CloseProject { path } => {
+            let Some(ix) = workspace
+                .projects
+                .iter()
+                .position(|project| project.path == Path::new(&path))
+            else {
+                return rejected(Reason::UnknownProject);
+            };
+            workspace.close_project(ix, cx);
+            Outcome::Accepted
+        }
         Action::RemoveSession { key } => {
             let Some(id) = find(&workspace.projects, &key) else {
                 return rejected(Reason::UnknownSession);

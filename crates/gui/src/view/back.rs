@@ -61,6 +61,7 @@ impl Cydonia {
             self.menu.take().is_some(),
             self.confirming.take().is_some(),
             self.making.take().is_some(),
+            self.browsing.take().is_some(),
             self.desktop_only.take().is_some(),
             self.info.take().is_some(),
             self.renaming.take().is_some(),

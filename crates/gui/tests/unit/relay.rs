@@ -70,3 +70,25 @@ fn writes_are_not_kept_as_answers() {
 
     assert!(!cache().held.contains_key(&write));
 }
+
+#[test]
+fn a_made_folder_is_listed_without_asking_again() {
+    install(record, "laptop");
+    let made = Answer::Folders(remote::proto::Folders {
+        path: "/p/new".into(),
+        parent: Some("/p".into()),
+        folders: Vec::new(),
+    });
+    let make = Query::MakeFolder {
+        path: "/p/new".into(),
+    };
+    answered(make.clone(), made.clone());
+
+    let listing = Query::Folders {
+        path: "/p/new".into(),
+    };
+    assert_eq!(ask(listing.clone()), Ok(made.clone()));
+    assert_eq!(asked(&listing), 0);
+    assert_eq!(take(&make), Some(made));
+    assert_eq!(take(&make), None, "an answer is taken once");
+}

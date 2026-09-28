@@ -4,15 +4,15 @@ use portable_pty::PtySize;
 use remote::{
     hub::Hub,
     proto::{
-        Answer, BOLD, Color, DIM, DirEntry, File, ITALIC, Output, Query, Run, Screen, ShellInput,
-        UNDERLINE,
+        Answer, BOLD, Color, DIM, DirEntry, File, Folders, ITALIC, Output, Query, Run, Screen,
+        ShellInput, UNDERLINE,
     },
     server::{Local, ShellLink},
 };
 use std::{
     ffi::OsString,
     io::Read as _,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     sync::{Arc, mpsc as channel},
     time::Duration,
 };
@@ -87,6 +87,70 @@ fn read_dir(path: &Path) -> Answer {
         })
         .collect();
     Answer::Dir { entries }
+}
+
+fn absolute(path: &str) -> Option<PathBuf> {
+    let path = match path {
+        "" => dirs::home_dir()?,
+        typed => PathBuf::from(typed),
+    };
+    let plain = path
+        .components()
+        .all(|part| !matches!(part, Component::ParentDir | Component::CurDir));
+    (path.is_absolute() && plain).then_some(path)
+}
+
+fn shown(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+fn folders(path: &Path) -> Answer {
+    let Ok(real) = std::fs::canonicalize(path) else {
+        return failed("That folder is not there any more");
+    };
+    let Ok(listing) = std::fs::read_dir(&real) else {
+        return failed("Could not list this folder");
+    };
+    let mut names: Vec<String> = listing
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().is_dir())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| !name.starts_with('.'))
+        .collect();
+    names.sort_by_key(|name| name.to_lowercase());
+    Answer::Folders(Folders {
+        path: shown(&real),
+        parent: real.parent().map(shown),
+        folders: names,
+    })
+}
+
+fn make_folder(path: &Path) -> Answer {
+    if path.file_name().is_none() {
+        return failed("Name the new folder");
+    }
+    match std::fs::create_dir(path) {
+        Ok(()) => folders(path),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            failed("Something with that name is already here")
+        }
+        Err(error) => failed(error),
+    }
+}
+
+fn browse(query: &Query) -> Option<Answer> {
+    let (path, make) = match query {
+        Query::Folders { path } => (path, false),
+        Query::MakeFolder { path } => (path, true),
+        _ => return None,
+    };
+    let Some(path) = absolute(path) else {
+        return Some(failed("Not a full path"));
+    };
+    Some(match make {
+        true => make_folder(&path),
+        false => folders(&path),
+    })
 }
 
 fn read_file(path: &Path) -> Answer {
@@ -170,6 +234,9 @@ fn run_git(cwd: &Path, args: &[String]) -> Answer {
 
 impl Local for Laptop {
     fn answer(&self, query: Query) -> Answer {
+        if let Some(answer) = browse(&query) {
+            return answer;
+        }
         let path = match &query {
             Query::Agents => {
                 return Answer::Agents {
@@ -180,6 +247,7 @@ impl Local for Laptop {
                 path
             }
             Query::Git { cwd, .. } => cwd,
+            Query::Folders { .. } | Query::MakeFolder { .. } => return failed("Not a project path"),
         };
         let Some(path) = self.inside(Path::new(path)) else {
             return failed("Outside every open project");
@@ -189,7 +257,7 @@ impl Local for Laptop {
             Query::ReadFile { .. } => read_file(&path),
             Query::WriteFile { text, .. } => write_file(&path, text),
             Query::Git { args, .. } => run_git(&path, args),
-            Query::Agents => failed("Not a path"),
+            Query::Agents | Query::Folders { .. } | Query::MakeFolder { .. } => failed("Not a path"),
         }
     }
 

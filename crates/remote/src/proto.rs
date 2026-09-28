@@ -260,6 +260,12 @@ pub enum Action {
     RemoveAgent {
         id: String,
     },
+    OpenProject {
+        path: String,
+    },
+    CloseProject {
+        path: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -325,6 +331,8 @@ pub enum Query {
     WriteFile { path: String, text: String },
     Git { cwd: String, args: Vec<String> },
     Agents,
+    Folders { path: String },
+    MakeFolder { path: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -335,7 +343,15 @@ pub enum Answer {
     Written,
     Output(Output),
     Agents { agents: Vec<AgentListing> },
+    Folders(Folders),
     Failed { message: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Folders {
+    pub path: String,
+    pub parent: Option<String>,
+    pub folders: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

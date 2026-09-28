@@ -29,6 +29,7 @@ pub trait Sink {
     fn write(&self, project: &Path, write: Write);
     fn session(&self, project: &Path, record: &str, change: SessionChange);
     fn agent(&self, id: &str, install: bool);
+    fn project(&self, path: &Path, open: bool);
 }
 
 thread_local! {

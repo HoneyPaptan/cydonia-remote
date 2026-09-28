@@ -1564,8 +1564,9 @@ impl Cydonia {
                 .tinted_icon_button(icons::math::Plus, theme.text_faint)
                 .id("open-project")
                 .flex_none()
-                .invisible()
-                .group_hover(group, |el| el.visible())
+                .when(cfg!(feature = "desktop"), |el| {
+                    el.invisible().group_hover(group, |el| el.visible())
+                })
                 .tooltip(move |window, cx| match chord.clone() {
                     Some(chord) => Tooltip::with_keystroke("Open project", chord, window, cx),
                     None => Tooltip::text("Open project", window, cx),
@@ -1748,7 +1749,7 @@ impl Cydonia {
                 by("Manual", state::Sort::Manual),
             ],
         )];
-        rows.push(menu::row(
+        rows.extend(cfg!(feature = "desktop").then(|| menu::row(
             Item::action(if cfg!(target_os = "macos") {
                 "Reveal in Finder"
             } else if cfg!(windows) {
@@ -1758,7 +1759,7 @@ impl Cydonia {
             })
             .with_icon(icons::files::FolderOpen),
             move |this, _, cx| this.reveal_project(ix, cx),
-        ));
+        )));
         rows.push(menu::row(
             Item::action("Remove project").with_icon(icons::files::FolderMinus),
             move |this, _, cx| this.close_project(ix, cx),

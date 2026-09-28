@@ -146,10 +146,21 @@ fn keep(query: Query, answer: Answer) {
 }
 
 pub fn answered(query: Query, answer: Answer) {
-    if matches!(query, Query::WriteFile { .. }) {
-        return;
+    match (&query, &answer) {
+        (Query::WriteFile { .. }, _) => return,
+        (Query::MakeFolder { .. }, Answer::Folders(made)) => keep(
+            Query::Folders {
+                path: made.path.clone(),
+            },
+            answer.clone(),
+        ),
+        _ => {}
     }
     keep(query, answer);
+}
+
+pub fn take(query: &Query) -> Option<Answer> {
+    cache().held.remove(query).map(|held| held.answer)
 }
 
 pub fn unanswered(query: &Query) {
