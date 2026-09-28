@@ -88,14 +88,24 @@ pub mod saved {
         let Ok(text) = toml::to_string(file) else {
             return;
         };
-        let path = dir.join(FILE);
-        if std::fs::create_dir_all(&dir).is_ok() && std::fs::write(&path, text).is_ok() {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt as _;
-                let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        if std::fs::create_dir_all(&dir).is_ok() {
+            let _ = write_private(&dir.join(FILE), &text);
+        }
+    }
+
+    fn write_private(path: &std::path::Path, text: &str) -> std::io::Result<()> {
+        use std::io::Write as _;
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+            options.mode(0o600);
+            if path.exists() {
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
             }
         }
+        options.open(path)?.write_all(text.as_bytes())
     }
 
     fn reachable(address: &str) -> bool {
