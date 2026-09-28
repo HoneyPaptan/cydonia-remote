@@ -229,6 +229,17 @@ pub enum Action {
         project: String,
         id: String,
     },
+    SetCover {
+        project: String,
+        id: String,
+        cover: Option<Cover>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Cover {
+    pub name: String,
+    pub file: File,
 }
 
 impl Action {
@@ -240,7 +251,8 @@ impl Action {
             | Action::CreateArticle { project, .. }
             | Action::WriteArticle { project, .. }
             | Action::SaveProperties { project, .. }
-            | Action::RemoveArticle { project, .. } => Some(project),
+            | Action::RemoveArticle { project, .. }
+            | Action::SetCover { project, .. } => Some(project),
             _ => None,
         }
     }
@@ -291,6 +303,7 @@ pub enum Answer {
     Output(Output),
     Failed { message: String },
 }
+
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DirEntry {

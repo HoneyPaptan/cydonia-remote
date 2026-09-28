@@ -1,6 +1,6 @@
 use artifact::article::properties;
 use gui::model::sink::Write;
-use remote::proto::Action;
+use remote::proto::{Action, Cover, File};
 
 pub fn action(project: String, write: Write) -> Option<Action> {
     Some(match write {
@@ -25,5 +25,13 @@ pub fn action(project: String, write: Write) -> Option<Action> {
             properties: properties::apply("", &held).unwrap_or_default(),
         },
         Write::RemoveArticle(id) => Action::RemoveArticle { project, id },
+        Write::SetCover { id, cover } => Action::SetCover {
+            project,
+            id,
+            cover: cover.map(|(name, bytes)| Cover {
+                name,
+                file: File(bytes),
+            }),
+        },
     })
 }

@@ -91,6 +91,31 @@ macro_rules! each {
 }
 
 impl Store {
+    pub fn relays(&self) -> bool {
+        matches!(self, Store::Relayed(..))
+    }
+
+    pub fn cover(&self, id: &str) -> Option<(String, Vec<u8>)> {
+        match self {
+            Store::Fs(_) => None,
+            Store::Memory(store) | Store::Relayed(store, _) => store.cover(id),
+        }
+    }
+
+    pub fn set_cover(&self, id: &str, cover: Option<(String, Vec<u8>)>) -> Result<()> {
+        match self {
+            Store::Fs(_) => Ok(()),
+            Store::Memory(store) => store.set_cover(id, cover),
+            Store::Relayed(store, _) => {
+                let held = cover.clone();
+                self.relayed(store.set_cover(id, held), || Write::SetCover {
+                    id: id.to_owned(),
+                    cover,
+                })
+            }
+        }
+    }
+
     fn relayed<T>(&self, done: Result<T>, write: impl FnOnce() -> Write) -> Result<T> {
         if done.is_ok()
             && let (Store::Relayed(_, path), Some(sink)) = (self, sink::get())

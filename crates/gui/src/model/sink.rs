@@ -9,6 +9,7 @@ pub enum Write {
     WriteArticle { id: String, markdown: String },
     SaveProperties { id: String, properties: Properties },
     RemoveArticle(String),
+    SetCover { id: String, cover: Option<(String, Vec<u8>)> },
 }
 
 pub trait Sink {

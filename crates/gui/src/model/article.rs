@@ -92,10 +92,15 @@ pub struct Article {
 impl Article {
     fn new(project: &Path, store: Store, held: layout::Article) -> Self {
         let properties = store.properties(&held.id);
+        let path = layout::content(&layout::dir(project).join(&held.id));
         Self {
             number: store.number("article", &held.id).ok(),
-            path: layout::content(&layout::dir(project).join(&held.id)),
-            cover: held.cover.as_ref().and_then(file_url::to_path),
+            cover: held
+                .cover
+                .as_ref()
+                .and_then(file_url::to_path)
+                .or_else(|| held_cover(&store, &held.id, &path)),
+            path,
             title: properties.title,
             touched: held.touched,
             archived: properties.archived,
@@ -335,7 +340,11 @@ impl Article {
         self.title = held.title;
         if let Some(article) = self.store.article(&self.id) {
             self.touched = article.touched;
-            self.cover = article.cover.as_ref().and_then(file_url::to_path);
+            self.cover = article
+                .cover
+                .as_ref()
+                .and_then(file_url::to_path)
+                .or_else(|| held_cover(&self.store, &self.id, &self.path));
         }
         self.archived = held.archived;
         self.full_width = held.full_width;
@@ -374,7 +383,17 @@ impl Article {
     /// An import that fails leaves the cover that is already up. The person
     /// picked a file we could not read, and the answer to that is the picture
     /// they had, not a blank band.
+    pub fn cover_bytes(&self) -> Option<(String, Vec<u8>)> {
+        self.store.cover(&self.id)
+    }
+
     pub fn set_cover(&mut self, source: Option<&Path>) {
+        if self.store.relays() {
+            if source.is_none() && self.store.set_cover(&self.id, None).is_ok() {
+                self.cover = None;
+            }
+            return;
+        }
         let Some(source) = source else {
             self.replace_cover(None);
             return;
@@ -397,6 +416,14 @@ impl Article {
         let Some(to) = cover::path(&self.path, seed, "svg") else {
             return;
         };
+        if self.store.relays() {
+            let name = to.file_name().map(|name| name.to_string_lossy().into_owned());
+            let drawn = name.map(|name| (name, cover::svg(seed).into_bytes()));
+            if drawn.is_some() && self.store.set_cover(&self.id, drawn).is_ok() {
+                self.cover = Some(to);
+            }
+            return;
+        }
         if std::fs::write(&to, cover::svg(seed)).is_ok() {
             self.replace_cover(Some(to));
         }
@@ -410,6 +437,11 @@ impl Article {
             let _ = std::fs::remove_file(old);
         }
     }
+}
+
+fn held_cover(store: &Store, id: &str, content: &Path) -> Option<PathBuf> {
+    let (name, _) = store.cover(id)?;
+    Some(content.with_file_name(name))
 }
 
 /// What a reader gets, out of what the pane holds.

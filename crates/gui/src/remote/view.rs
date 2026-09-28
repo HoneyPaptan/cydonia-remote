@@ -22,6 +22,14 @@ pub fn export(store: &Store) -> BTreeMap<String, File> {
                 File(markdown.into_bytes()),
             );
         }
+        if let Some(cover) = article.cover.as_ref().and_then(crate::model::file_url::to_path)
+            && let (Some(name), Ok(bytes)) = (
+                cover.file_name().and_then(|name| name.to_str()),
+                std::fs::read(&cover),
+            )
+        {
+            files.insert(format!("articles/{}/{name}", article.id), File(bytes));
+        }
         if let Some(text) = properties::apply("", &store.properties(&article.id)) {
             files.insert(
                 format!("articles/{}/properties.toml", article.id),

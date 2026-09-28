@@ -11,7 +11,7 @@ use artifact::{
     project::{Project as _, Stale},
 };
 use bezel::gpui::Context;
-use remote::proto::{Action, Outcome, Reason, SessionKey};
+use remote::proto::{Action, Cover, Outcome, Reason, SessionKey};
 use std::path::{Path, PathBuf};
 
 fn rejected(reason: Reason) -> Outcome {
@@ -67,6 +67,21 @@ pub fn perform(store: &Store, action: &Action) -> Result<()> {
     }
 }
 
+fn place_cover(project: &Path, id: &str, cover: Option<&Cover>) -> Result<()> {
+    use artifact::article as layout;
+    let content = layout::content(&layout::dir(project).join(plain(id)?));
+    anyhow::ensure!(content.exists(), "no article {id}");
+    while let Some(old) = layout::cover::of(&content) {
+        std::fs::remove_file(old)?;
+    }
+    if let Some(cover) = cover {
+        let name = plain(&cover.name)?;
+        anyhow::ensure!(name.starts_with(layout::cover::MARK), "{name:?} is not a cover");
+        std::fs::write(content.with_file_name(name), &cover.file.0)?;
+    }
+    Ok(())
+}
+
 fn written(workspace: &mut Workspace, action: &Action, cx: &mut Context<Workspace>) -> Outcome {
     let Some(path) = action.written_project().map(PathBuf::from) else {
         return rejected(Reason::Invalid);
@@ -78,7 +93,11 @@ fn written(workspace: &mut Workspace, action: &Action, cx: &mut Context<Workspac
     {
         return rejected(Reason::UnknownProject);
     }
-    match perform(&store::open(&path), action) {
+    let done = match action {
+        Action::SetCover { id, cover, .. } => place_cover(&path, id, cover.as_ref()),
+        _ => perform(&store::open(&path), action),
+    };
+    match done {
         Ok(()) => {
             workspace.reload_project(&path, cx);
             Outcome::Accepted

@@ -27,6 +27,7 @@ impl Sink for Recorder {
             Write::WriteArticle { markdown, .. } => format!("write article {markdown}"),
             Write::SaveProperties { .. } => "save properties".to_owned(),
             Write::RemoveArticle(_) => "remove article".to_owned(),
+            Write::SetCover { .. } => "set cover".to_owned(),
         };
         self.0
             .borrow_mut()

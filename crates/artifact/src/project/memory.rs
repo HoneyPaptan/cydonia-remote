@@ -46,6 +46,7 @@ struct Held {
     /// not know about survive a save.
     properties: String,
     assets: BTreeMap<String, Vec<u8>>,
+    cover: Option<(String, Vec<u8>)>,
     touched: u128,
 }
 
@@ -57,6 +58,15 @@ impl Project {
     /// A backend holding the files of a `.cydonia/`, each named by its path
     /// relative to that directory with `/` between components. Files it does
     /// not read are skipped, as is anything that does not parse.
+    pub fn cover(&self, id: &str) -> Option<(String, Vec<u8>)> {
+        self.state().articles.get(id)?.cover.clone()
+    }
+
+    pub fn set_cover(&self, id: &str, cover: Option<(String, Vec<u8>)>) -> Result<()> {
+        self.state().article(id)?.cover = cover;
+        Ok(())
+    }
+
     pub fn seed<'a>(files: impl IntoIterator<Item = (&'a str, &'a [u8])>) -> Self {
         let this = Self::new();
         {
@@ -102,6 +112,13 @@ impl Project {
                             .entry((*article).to_owned())
                             .or_default()
                             .properties = text();
+                    }
+                    ["articles", article, name] if name.starts_with(crate::article::cover::MARK) => {
+                        state
+                            .articles
+                            .entry((*article).to_owned())
+                            .or_default()
+                            .cover = Some(((*name).to_owned(), bytes.to_vec()));
                     }
                     ["articles", article, "assets", name] => {
                         state

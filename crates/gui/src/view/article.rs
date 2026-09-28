@@ -602,7 +602,7 @@ impl Cydonia {
             .h(px(COVER_HEIGHT))
             .overflow_hidden()
             .child(
-                img(cover)
+                img(self.cover_source(cover, cx))
                     .size_full()
                     .object_fit(ObjectFit::Cover)
                     // Off gpui's own asset cache, which never lets a decoded
@@ -610,6 +610,45 @@ impl Cydonia {
                     .image_cache(&memory::covers(cx)),
             )
             .child(self.cover_controls(cx))
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn cover_source(&self, cover: PathBuf, _: &Context<Self>) -> gpui::ImageSource {
+        cover.into()
+    }
+
+    #[cfg(target_family = "wasm")]
+    fn cover_source(&self, cover: PathBuf, cx: &Context<Self>) -> gpui::ImageSource {
+        use std::{cell::RefCell, collections::HashMap, sync::Arc};
+        thread_local! {
+            static DRAWN: RefCell<HashMap<PathBuf, Arc<gpui::Image>>> = RefCell::new(HashMap::new());
+        }
+        if let Some(drawn) = DRAWN.with_borrow(|drawn| drawn.get(&cover).cloned()) {
+            return drawn.into();
+        }
+        let name = cover.file_name().map(|name| name.to_string_lossy().into_owned());
+        let bytes = self
+            .workspace
+            .read(cx)
+            .projects
+            .iter()
+            .flat_map(|project| project.articles.iter())
+            .filter(|article| article.cover.as_ref() == Some(&cover))
+            .find_map(|article| article.cover_bytes())
+            .filter(|(held, _)| Some(held) == name.as_ref());
+        let Some((_, bytes)) = bytes else {
+            return cover.into();
+        };
+        let format = match cover.extension().and_then(|ext| ext.to_str()) {
+            Some("svg") => gpui::ImageFormat::Svg,
+            Some("jpg" | "jpeg") => gpui::ImageFormat::Jpeg,
+            Some("webp") => gpui::ImageFormat::Webp,
+            Some("gif") => gpui::ImageFormat::Gif,
+            _ => gpui::ImageFormat::Png,
+        };
+        let drawn = Arc::new(gpui::Image::from_bytes(format, bytes));
+        DRAWN.with_borrow_mut(|held| held.insert(cover, drawn.clone()));
+        drawn.into()
     }
 
     /// The cover's own controls, kept off the page until the pointer is on it.
@@ -632,16 +671,19 @@ impl Cydonia {
             .absolute()
             .bottom(px(10.))
             .right(px(10.))
-            .invisible()
-            .group_hover("cover", |row| row.visible())
+            .when(cfg!(feature = "desktop"), |row| {
+                row.invisible().group_hover("cover", |row| row.visible())
+            })
             .child(
                 chip("cover-shuffle", "Shuffle")
                     .on_click(cx.listener(|this, _, _, cx| this.shuffle_cover(cx))),
             )
-            .child(
-                chip("cover-change", "Change")
-                    .on_click(cx.listener(|this, _, _, cx| this.pick_cover(cx))),
-            )
+            .when(cfg!(feature = "desktop"), |row| {
+                row.child(
+                    chip("cover-change", "Change")
+                        .on_click(cx.listener(|this, _, _, cx| this.pick_cover(cx))),
+                )
+            })
             .child(
                 chip("cover-remove", "Remove")
                     .on_click(cx.listener(|this, _, _, cx| this.remove_cover(cx))),
