@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.InputType
 import android.text.method.PasswordTransformationMethod
 import android.view.Gravity
@@ -12,18 +14,17 @@ import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
-import java.net.HttpURLConnection
-import java.net.URL
-import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
   private var web: WebView? = null
+  private val watchdog = Handler(Looper.getMainLooper())
 
   override fun onCreate(state: Bundle?) {
     super.onCreate(state)
@@ -36,6 +37,11 @@ class MainActivity : Activity() {
     Connection.from(intent.data)?.let { askFor(it) }
   }
 
+  override fun onResume() {
+    super.onResume()
+    web?.evaluateJavascript("window.dispatchEvent(new Event('cydonia-resume'))", null)
+  }
+
   @Deprecated("Deprecated in Java")
   override fun onBackPressed() {
     if (web != null) moveTaskToBack(true) else super.onBackPressed()
@@ -45,7 +51,7 @@ class MainActivity : Activity() {
     when {
       !connection.complete -> askFor(connection)
       !connection.private -> askFor(connection, getString(R.string.not_private, connection.host))
-      else -> reach(connection)
+      else -> load(connection)
     }
   }
 
@@ -72,6 +78,7 @@ class MainActivity : Activity() {
     }
 
   private fun show(view: View) {
+    watchdog.removeCallbacksAndMessages(null)
     web?.destroy()
     web = null
     setContentView(view)
@@ -107,30 +114,10 @@ class MainActivity : Activity() {
   private fun offline(connection: Connection) {
     show(column().apply {
       addView(label(getString(R.string.offline, connection.address)))
-      addView(button(getString(R.string.retry)) { reach(connection) })
+      addView(button(getString(R.string.retry)) { load(connection) })
       addView(button(getString(R.string.change)) { askFor(connection) })
     })
   }
-
-  private fun reach(connection: Connection) {
-    show(column().apply { addView(label(getString(R.string.connecting, connection.address))) })
-    thread {
-      val reachable = answers(connection)
-      runOnUiThread { if (reachable) load(connection) else offline(connection) }
-    }
-  }
-
-  private fun answers(connection: Connection): Boolean =
-    runCatching {
-      val probe = URL("${connection.base}/index.html").openConnection() as HttpURLConnection
-      probe.connectTimeout = PROBE_TIMEOUT
-      probe.readTimeout = PROBE_TIMEOUT
-      try {
-        probe.responseCode == HttpURLConnection.HTTP_OK
-      } finally {
-        probe.disconnect()
-      }
-    }.getOrDefault(false)
 
   private fun load(connection: Connection) {
     val view = WebView(this).apply {
@@ -146,17 +133,26 @@ class MainActivity : Activity() {
           return true
         }
 
+        override fun onPageCommitVisible(view: WebView, url: String) {
+          watchdog.removeCallbacksAndMessages(null)
+        }
+
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+          if (request.isForMainFrame) offline(connection)
+        }
+
+        override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
           if (request.isForMainFrame) offline(connection)
         }
       }
     }
     show(view)
     web = view
+    watchdog.postDelayed({ offline(connection) }, LOAD_TIMEOUT)
     view.loadUrl(connection.page)
   }
 
   companion object {
-    private const val PROBE_TIMEOUT = 5000
+    private const val LOAD_TIMEOUT = 8000L
   }
 }

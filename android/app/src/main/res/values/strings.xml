@@ -5,7 +5,6 @@
   <string name="address_hint">Laptop address, like 100.101.14.98:7878</string>
   <string name="token_hint">Token from the laptop</string>
   <string name="connect">Connect</string>
-  <string name="connecting">Connecting to %1$s</string>
   <string name="offline">Cannot reach the laptop at %1$s</string>
   <string name="retry">Retry</string>
   <string name="change">Change connection</string>
