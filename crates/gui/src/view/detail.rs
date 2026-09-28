@@ -591,7 +591,7 @@ impl Cydonia {
             // Both belong to the agent process rather than to the transcript,
             // so a session read back off disk offers neither until it
             // reconnects.
-            let live = chat.filter(|chat| chat.live());
+            let live = chat.filter(|chat| chat.offers_switches());
             pointed.push((
                 chat.map(|chat| chat.id),
                 chat.map(|chat| chat.draft.clone()).unwrap_or_default(),

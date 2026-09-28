@@ -107,6 +107,27 @@ pub fn route(workspace: &mut Workspace, action: Action, cx: &mut Context<Workspa
             workspace.with_session(id, cx, |chat| chat.cancel());
             Outcome::Accepted
         }
+        Action::SetMode { key, mode } => {
+            let Some(id) = find(&workspace.projects, &key) else {
+                return rejected(Reason::UnknownSession);
+            };
+            workspace.set_session_mode(id, mode, cx);
+            Outcome::Accepted
+        }
+        Action::SetConfig { key, config, value } => {
+            let Some(id) = find(&workspace.projects, &key) else {
+                return rejected(Reason::UnknownSession);
+            };
+            workspace.set_session_config(
+                id,
+                config,
+                cacp::schema::SessionConfigOptionValue::ValueId {
+                    value: value.into(),
+                },
+                cx,
+            );
+            Outcome::Accepted
+        }
         Action::RespondPermission {
             key,
             request,

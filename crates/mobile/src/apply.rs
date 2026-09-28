@@ -54,6 +54,8 @@ pub fn header(chat: &mut ChatSession, header: &SessionHeader) {
         _ => Connection::Idle,
     };
     chat.permission = header.permission.as_ref().map(prompt);
+    chat.config = header.config.clone();
+    chat.modes = header.modes.clone();
     chat.usage = header.usage.map(|usage| Usage {
         used: usage.used,
         size: usage.size,

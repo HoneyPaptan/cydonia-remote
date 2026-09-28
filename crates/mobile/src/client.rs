@@ -152,6 +152,21 @@ impl Sink for Commands {
         });
     }
 
+    fn set_mode(&self, project: &Path, record: &str, mode: String) {
+        self.deliver(Action::SetMode {
+            key: key(project, record),
+            mode,
+        });
+    }
+
+    fn set_config(&self, project: &Path, record: &str, config: String, value: String) {
+        self.deliver(Action::SetConfig {
+            key: key(project, record),
+            config,
+            value,
+        });
+    }
+
     fn write(&self, project: &Path, write: Write) {
         if let Some(action) = crate::write::action(project.to_string_lossy().into_owned(), write) {
             self.deliver(action);

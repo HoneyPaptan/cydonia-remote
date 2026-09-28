@@ -21,6 +21,8 @@ pub fn header(status: Status) -> SessionHeader {
         permission: None,
         queued: 0,
         usage: None,
+        config: Vec::new(),
+        modes: None,
     }
 }
 

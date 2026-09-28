@@ -88,6 +88,11 @@ pub fn header(chat: &ChatSession) -> SessionHeader {
             used: usage.used,
             size: usage.size,
         }),
+        config: match chat.live() {
+            true => chat.config.clone(),
+            false => Vec::new(),
+        },
+        modes: chat.modes.clone().filter(|_| chat.live()),
     }
 }
 

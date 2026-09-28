@@ -15,6 +15,8 @@ pub trait Sink {
     fn send_prompt(&self, project: &Path, record: &str, text: String);
     fn cancel(&self, project: &Path, record: &str);
     fn respond_permission(&self, project: &Path, record: &str, request: u64, option: String);
+    fn set_mode(&self, project: &Path, record: &str, mode: String);
+    fn set_config(&self, project: &Path, record: &str, config: String, value: String);
     fn new_session(&self, project: &Path, agent: &str, text: Option<String>);
     fn write(&self, project: &Path, write: Write);
 }

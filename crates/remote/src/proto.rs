@@ -2,6 +2,7 @@ use artifact::session::{
     chat::{ChatItem, PlanStatus},
     record::ForkOrigin,
 };
+use cacp::schema::{SessionConfigOption, SessionModeState};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -56,6 +57,10 @@ pub struct SessionHeader {
     pub permission: Option<PermissionView>,
     pub queued: usize,
     pub usage: Option<Usage>,
+    #[serde(default)]
+    pub config: Vec<SessionConfigOption>,
+    #[serde(default)]
+    pub modes: Option<SessionModeState>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -178,6 +183,15 @@ pub enum Action {
         key: SessionKey,
         request: u64,
         option: String,
+    },
+    SetMode {
+        key: SessionKey,
+        mode: String,
+    },
+    SetConfig {
+        key: SessionKey,
+        config: String,
+        value: String,
     },
     NewSession {
         project: String,

@@ -2521,6 +2521,7 @@ version = "0.1.19"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "cacp",
  "cydonia-artifact",
  "futures",
  "serde",

@@ -23,6 +23,8 @@ fn view(agent: &str) -> SessionView {
             permission: None,
             queued: 0,
             usage: None,
+            config: Vec::new(),
+            modes: None,
         },
         items: vec![
             ChatItem::User("go".into()),

@@ -583,6 +583,13 @@ impl ChatSession {
         false
     }
 
+    /// Whether its mode and config options are worth offering. On a phone they
+    /// arrive from the laptop only while its agent is live there, so what
+    /// arrived is the answer.
+    pub fn offers_switches(&self) -> bool {
+        cfg!(not(feature = "desktop")) || self.live()
+    }
+
     /// Whether sending to it would start an agent: it is not talking to one,
     /// and one is not already on the way.
     pub fn idle(&self) -> bool {
@@ -713,8 +720,11 @@ impl ChatSession {
     /// lands, is what settles any disagreement.
     pub fn set_mode(&mut self, mode_id: &str) {
         #[cfg(not(feature = "desktop"))]
-        {
-            let _ = mode_id;
+        if let (Some(sink), Some(record)) = (crate::model::sink::get(), self.record.as_deref()) {
+            sink.set_mode(&self.cwd, record, mode_id.to_owned());
+            if let Some(modes) = &mut self.modes {
+                modes.current_mode_id = mode_id.to_owned().into();
+            }
         }
         #[cfg(feature = "desktop")]
         {
@@ -746,8 +756,11 @@ impl ChatSession {
     /// (`session/set_config_option`).
     pub fn set_config(&mut self, config_id: &str, value: SessionConfigOptionValue) {
         #[cfg(not(feature = "desktop"))]
+        if let (Some(sink), Some(record), SessionConfigOptionValue::ValueId { value }) =
+            (crate::model::sink::get(), self.record.as_deref(), value)
         {
-            let _ = (config_id, value);
+            sink.set_config(&self.cwd, record, config_id.to_owned(), value.to_string());
+            self.pick_config_locally(config_id, value);
         }
         #[cfg(feature = "desktop")]
         {
@@ -794,6 +807,17 @@ impl ChatSession {
                 self.notice(true, &format!("Could not save session default: {error}"));
             }
             self.save_preferences();
+        }
+    }
+
+    /// A picked value shown before the laptop's own update confirms it, as
+    /// the desktop does for its agent.
+    #[cfg(not(feature = "desktop"))]
+    fn pick_config_locally(&mut self, config_id: &str, value: cacp::schema::SessionConfigValueId) {
+        if let Some(option) = self.config.iter_mut().find(|option| &*option.id == config_id)
+            && let cacp::schema::SessionConfigKind::Select(select) = &mut option.kind
+        {
+            select.current_value = value;
         }
     }
 

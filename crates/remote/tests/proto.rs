@@ -1,7 +1,7 @@
 mod common;
 
 use common::{file, key};
-use cydonia_remote::proto::{Action, Change, Command, Frame};
+use cydonia_remote::proto::{Action, Change, Command, Frame, SessionHeader, Status};
 use serde_json::json;
 
 #[test]
@@ -51,4 +51,37 @@ fn resync_frame_is_tagged() {
         serde_json::to_value(Frame::Resync).unwrap(),
         json!({"type": "resync"})
     );
+}
+
+#[test]
+fn a_model_pick_travels_as_a_semantic_command() {
+    let command: Command = serde_json::from_value(json!({
+        "id": "cmd_7",
+        "action": {
+            "type": "set_config",
+            "key": {"project": "/p", "record": "s"},
+            "config": "model",
+            "value": "opus"
+        }
+    }))
+    .unwrap();
+    assert_eq!(
+        command.action,
+        Action::SetConfig {
+            key: key("/p", "s"),
+            config: "model".into(),
+            value: "opus".into(),
+        }
+    );
+}
+
+#[test]
+fn a_header_without_switches_still_reads() {
+    let mut value = serde_json::to_value(common::header(Status::Idle)).unwrap();
+    let fields = value.as_object_mut().unwrap();
+    fields.remove("config");
+    fields.remove("modes");
+    let header: SessionHeader = serde_json::from_value(value).unwrap();
+    assert!(header.config.is_empty());
+    assert_eq!(header.modes, None);
 }

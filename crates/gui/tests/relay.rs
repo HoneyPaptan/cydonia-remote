@@ -15,6 +15,8 @@ impl Sink for Recorder {
     fn send_prompt(&self, _: &Path, _: &str, _: String) {}
     fn cancel(&self, _: &Path, _: &str) {}
     fn respond_permission(&self, _: &Path, _: &str, _: u64, _: String) {}
+    fn set_mode(&self, _: &Path, _: &str, _: String) {}
+    fn set_config(&self, _: &Path, _: &str, _: String, _: String) {}
     fn new_session(&self, _: &Path, _: &str, _: Option<String>) {}
     fn write(&self, project: &Path, write: Write) {
         let what = match write {

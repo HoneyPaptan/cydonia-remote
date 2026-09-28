@@ -21,6 +21,8 @@ fn header(status: Status) -> SessionHeader {
             used: 10,
             size: 100,
         }),
+        config: Vec::new(),
+        modes: None,
     }
 }
 
