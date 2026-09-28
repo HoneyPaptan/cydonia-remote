@@ -1,0 +1,150 @@
+package sh.cydonia.remote
+
+import android.app.Activity
+import android.content.Intent
+import android.graphics.Color
+import android.os.Bundle
+import android.text.InputType
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
+import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.TextView
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlin.concurrent.thread
+
+class MainActivity : Activity() {
+  private var web: WebView? = null
+
+  override fun onCreate(state: Bundle?) {
+    super.onCreate(state)
+    Connection.from(intent?.data)?.save(this)
+    open(Connection.load(this))
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    Connection.from(intent.data)?.let {
+      it.save(this)
+      open(it)
+    }
+  }
+
+  @Deprecated("Deprecated in Java")
+  override fun onBackPressed() {
+    if (web != null) moveTaskToBack(true) else super.onBackPressed()
+  }
+
+  private fun open(connection: Connection) {
+    if (connection.complete) reach(connection) else askFor(connection)
+  }
+
+  private fun column(): LinearLayout =
+    LinearLayout(this).apply {
+      orientation = LinearLayout.VERTICAL
+      gravity = Gravity.CENTER
+      val gutter = (24 * resources.displayMetrics.density).toInt()
+      setPadding(gutter, gutter, gutter, gutter)
+    }
+
+  private fun label(text: String): TextView =
+    TextView(this).apply {
+      this.text = text
+      textSize = 18f
+      gravity = Gravity.CENTER
+      setPadding(0, 0, 0, (16 * resources.displayMetrics.density).toInt())
+    }
+
+  private fun button(text: String, action: () -> Unit): Button =
+    Button(this).apply {
+      this.text = text
+      setOnClickListener { action() }
+    }
+
+  private fun show(view: View) {
+    web?.destroy()
+    web = null
+    setContentView(view)
+  }
+
+  private fun askFor(connection: Connection) {
+    val address = EditText(this).apply {
+      hint = getString(R.string.address_hint)
+      setText(connection.address)
+      inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+      isSingleLine = true
+    }
+    val token = EditText(this).apply {
+      hint = getString(R.string.token_hint)
+      setText(connection.token)
+      inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+      isSingleLine = true
+    }
+    show(column().apply {
+      addView(label(getString(R.string.connect_title)))
+      addView(address, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+      addView(token, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+      addView(button(getString(R.string.connect)) {
+        val entered = Connection(address.text.toString().trim(), token.text.toString().trim())
+        entered.save(this@MainActivity)
+        open(entered)
+      })
+    })
+  }
+
+  private fun offline(connection: Connection) {
+    show(column().apply {
+      addView(label(getString(R.string.offline, connection.address)))
+      addView(button(getString(R.string.retry)) { reach(connection) })
+      addView(button(getString(R.string.change)) { askFor(connection) })
+    })
+  }
+
+  private fun reach(connection: Connection) {
+    show(column().apply { addView(label(getString(R.string.connecting, connection.address))) })
+    thread {
+      val reachable = answers(connection)
+      runOnUiThread { if (reachable) load(connection) else offline(connection) }
+    }
+  }
+
+  private fun answers(connection: Connection): Boolean =
+    runCatching {
+      val probe = URL("${connection.base}/index.html").openConnection() as HttpURLConnection
+      probe.connectTimeout = PROBE_TIMEOUT
+      probe.readTimeout = PROBE_TIMEOUT
+      try {
+        probe.responseCode == HttpURLConnection.HTTP_OK
+      } finally {
+        probe.disconnect()
+      }
+    }.getOrDefault(false)
+
+  private fun load(connection: Connection) {
+    val view = WebView(this).apply {
+      setBackgroundColor(Color.BLACK)
+      settings.javaScriptEnabled = true
+      settings.domStorageEnabled = true
+      webViewClient = object : WebViewClient() {
+        override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+          if (request.isForMainFrame) offline(connection)
+        }
+      }
+    }
+    show(view)
+    web = view
+    view.loadUrl(connection.page)
+  }
+
+  companion object {
+    private const val PROBE_TIMEOUT = 5000
+  }
+}
