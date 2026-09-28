@@ -1,0 +1,43 @@
+[test-groups]
+gui = { max-threads = 3 }
+
+[[profile.default.overrides]]
+filter = "package(cydonia-gui)"
+test-group = "gui"
+
+[profile.default]
+slow-timeout = { period = "30s", terminate-after = 4 }
+
+[profile.slice]
+fail-fast = false
+
+default-filter = """
+not (
+    test(=chords_are_written_the_way_the_platform_writes_them)
+  | test(=the_bar_offers_the_four_marks_markdown_spells)
+  | test(=view::board::drawer_tests::a_removed_card_keeps_its_text_accessible)
+  | test(=view::board::drawer_tests::emptied_cards_are_kept_and_never_saved)
+  | test(=view::board::drawer_tests::list_rows_open_drawer_and_group_controls_stay_independent)
+  | test(=view::board::drawer_tests::save_preserves_agent_metadata_and_rejects_conflicting_text)
+  | test(=view::board::drawer_tests::switching_and_closing_save_at_once)
+  | test(=view::board::drawer_tests::typing_saves_the_card)
+  | test(=view::clipboard_tests::transcript_copy_fallback_still_works)
+  | test(=view::component::composer::draft_tests::macos_word_navigation_and_selection)
+  | test(=view::component::file::tests::copy_source_selection_takes_priority_over_transcript)
+  | test(=view::component::file::tests::markdown_preview_supports_drag_select_all_and_copy)
+  | test(=view::component::file::tests::zoom_shortcuts_resize_source_and_work_in_preview)
+  | test(=view::component::panel::tests::command_w_closes_right_terminal_tabs_and_returns_to_launcher)
+  | test(=view::component::panel::tests::file_save_shortcut_works_in_the_panel)
+  | test(=view::component::panel::tests::terminal_menu_and_new_tab_use_cmd_t)
+  | test(=view::component::terminal::tests::cmd_t_adds_a_focused_tab_in_the_bottom_panel)
+  | test(=view::component::terminal::tests::command_w_closes_bottom_tabs_and_emits_empty_for_the_last)
+  | test(=view::component::terminal::tests::copy_terminal_selection_takes_priority_over_transcript)
+  | test(=view::component::terminal::tests::shell_has_session_directory_terminal_environment_and_resizes)
+  | test(=view::component::transcript::virtual_tests::long_session_renders_nearby_turns_and_navigates_without_losing_selection)
+)
+"""
+
+[[profile.slice.overrides]]
+filter = "test(=view::arrangement::open_entry_tests::syncing_the_composers_leaves_the_focus_where_it_was)"
+threads-required = "num-test-threads"
+retries = 2

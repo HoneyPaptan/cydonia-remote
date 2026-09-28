@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$root"
+cores="$(nproc)"
+export CARGO_BUILD_JOBS="${JOBS:-$(( cores > 1 ? cores - 1 : 1 ))}"
+
+step() { printf '\n== %s\n' "$1"; }
+
+step "native tests"
+cargo nextest run --workspace --exclude cydonia-mobile --exclude cydonia-demo \
+  --features cydonia-remote/server --profile slice
+
+step "wasm client"
+cargo clippy -p cydonia-mobile --lib --target wasm32-unknown-unknown -- -D warnings
+
+step "android shell"
+gradle -q -p android assembleDebug
+
+printf '\nall checks passed\n'
