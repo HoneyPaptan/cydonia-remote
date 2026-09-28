@@ -125,6 +125,7 @@ pub fn start(workspace: Entity<Workspace>, options: Options, cx: &mut App) -> Re
         Config {
             token: options.token,
             ui: options.ui,
+            local: Some(super::local::Laptop::new(hub.clone())),
         },
         hub.clone(),
         dispatch,

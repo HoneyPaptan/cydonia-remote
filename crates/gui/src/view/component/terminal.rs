@@ -103,10 +103,10 @@ pub fn keystroke_bytes(
 }
 
 /// Dropping the panel's owner terminates the shell; a waiter reaps it off-thread.
-struct Shell {
+pub(crate) struct Shell {
     pid: Option<u32>,
-    master: Box<dyn MasterPty + Send>,
-    input: channel::Sender<Vec<u8>>,
+    pub(crate) master: Box<dyn MasterPty + Send>,
+    pub(crate) input: channel::Sender<Vec<u8>>,
     killer: Box<dyn ChildKiller + Send + Sync>,
 }
 
@@ -120,12 +120,12 @@ impl Shell {
     /// Unit tests get no shell: its reader thread would wake the pump from
     /// outside gpui's test scheduler, which fails the test as nondeterministic.
     #[cfg(test)]
-    fn open(_: &Path) -> anyhow::Result<(Self, mpsc::Receiver<Vec<u8>>)> {
+    pub(crate) fn open(_: &Path) -> anyhow::Result<(Self, mpsc::Receiver<Vec<u8>>)> {
         anyhow::bail!("no shell under test")
     }
 
     #[cfg(not(test))]
-    fn open(cwd: &Path) -> anyhow::Result<(Self, mpsc::Receiver<Vec<u8>>)> {
+    pub(crate) fn open(cwd: &Path) -> anyhow::Result<(Self, mpsc::Receiver<Vec<u8>>)> {
         let shell = std::env::var_os("SHELL").filter(|s| !s.is_empty());
         // `$SHELL` is unset on Windows unless something like Git Bash put it
         // there, and `-l` is a unix shell's flag.

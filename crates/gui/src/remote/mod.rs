@@ -1,4 +1,5 @@
 mod host;
+mod local;
 mod route;
 mod token;
 mod view;

@@ -1,0 +1,299 @@
+use crate::{model::git, view::component::terminal::Shell};
+use futures::{StreamExt as _, channel::mpsc};
+use portable_pty::PtySize;
+use remote::{
+    hub::Hub,
+    proto::{
+        Answer, BOLD, Color, DIM, DirEntry, File, ITALIC, Output, Query, Run, Screen, ShellInput,
+        UNDERLINE,
+    },
+    server::{Local, ShellLink},
+};
+use std::{
+    ffi::OsString,
+    io::Read as _,
+    path::{Path, PathBuf},
+    sync::{Arc, mpsc as channel},
+    time::Duration,
+};
+use terminal::emulator::{CellColor, CellSnapshot, Emulator};
+
+const FILE_LIMIT: u64 = 256 * 1024;
+const GIT_COMMANDS: [&str; 4] = ["rev-parse", "status", "diff", "cat-file"];
+const GIT_REFUSED: [&str; 4] = ["--output", "--ext-diff", "--textconv", "--exec"];
+const SETTLE: Duration = Duration::from_millis(12);
+
+pub struct Laptop {
+    hub: Arc<Hub>,
+}
+
+impl Laptop {
+    pub fn new(hub: Arc<Hub>) -> Arc<Self> {
+        Arc::new(Self { hub })
+    }
+
+    fn roots(&self) -> Vec<PathBuf> {
+        self.hub
+            .mirror()
+            .projects
+            .iter()
+            .filter_map(|project| std::fs::canonicalize(&project.path).ok())
+            .collect()
+    }
+
+    fn inside(&self, path: &Path) -> Option<PathBuf> {
+        let real = std::fs::canonicalize(path).ok().or_else(|| {
+            let parent = std::fs::canonicalize(path.parent()?).ok()?;
+            Some(parent.join(path.file_name()?))
+        })?;
+        self.roots()
+            .iter()
+            .any(|root| real.starts_with(root))
+            .then_some(real)
+    }
+}
+
+fn failed(message: impl ToString) -> Answer {
+    Answer::Failed {
+        message: message.to_string(),
+    }
+}
+
+fn read_dir(path: &Path) -> Answer {
+    let Ok(listing) = std::fs::read_dir(path) else {
+        return failed("Could not list this folder");
+    };
+    let entries = listing
+        .filter_map(Result::ok)
+        .map(|entry| DirEntry {
+            directory: entry.file_type().is_ok_and(|kind| kind.is_dir()),
+            path: path.join(entry.file_name()).to_string_lossy().into_owned(),
+        })
+        .collect();
+    Answer::Dir { entries }
+}
+
+fn read_file(path: &Path) -> Answer {
+    if !std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file()) {
+        return failed("Choose a regular file");
+    }
+    let mut bytes = Vec::new();
+    match std::fs::File::open(path).and_then(|file| file.take(FILE_LIMIT + 1).read_to_end(&mut bytes)) {
+        Ok(_) => Answer::File { file: File(bytes) },
+        Err(error) => failed(error),
+    }
+}
+
+fn write_file(path: &Path, text: &str) -> Answer {
+    let temporary = path.with_file_name(format!(".cydonia-remote-save-{}", std::process::id()));
+    let written = std::fs::write(&temporary, text).and_then(|()| {
+        if let Ok(metadata) = std::fs::metadata(path) {
+            std::fs::set_permissions(&temporary, metadata.permissions())?;
+        }
+        std::fs::rename(&temporary, path)
+    });
+    match written {
+        Ok(()) => Answer::Written,
+        Err(error) => {
+            let _ = std::fs::remove_file(&temporary);
+            failed(error)
+        }
+    }
+}
+
+fn allowed(args: &[String]) -> bool {
+    args.first()
+        .is_some_and(|command| GIT_COMMANDS.contains(&command.as_str()))
+        && !args
+            .iter()
+            .any(|arg| GIT_REFUSED.iter().any(|refused| arg.starts_with(refused)))
+}
+
+fn run_git(cwd: &Path, args: &[String]) -> Answer {
+    if !allowed(args) {
+        return failed("That Git command is not relayed");
+    }
+    let args: Vec<OsString> = args.iter().map(OsString::from).collect();
+    match git::run(cwd, &args) {
+        Ok(ran) => Answer::Output(Output {
+            success: ran.success,
+            code: ran.code,
+            stdout: File(ran.stdout),
+            stderr: ran.stderr,
+            truncated: ran.truncated,
+        }),
+        Err(error) => failed(error),
+    }
+}
+
+impl Local for Laptop {
+    fn answer(&self, query: Query) -> Answer {
+        let path = match &query {
+            Query::ReadDir { path } | Query::ReadFile { path } | Query::WriteFile { path, .. } => {
+                path
+            }
+            Query::Git { cwd, .. } => cwd,
+        };
+        let Some(path) = self.inside(Path::new(path)) else {
+            return failed("Outside every open project");
+        };
+        match &query {
+            Query::ReadDir { .. } => read_dir(&path),
+            Query::ReadFile { .. } => read_file(&path),
+            Query::WriteFile { text, .. } => write_file(&path, text),
+            Query::Git { args, .. } => run_git(&path, args),
+        }
+    }
+
+    fn shell(&self, cwd: &str, cols: u16, rows: u16) -> Option<ShellLink> {
+        let cwd = self.inside(Path::new(cwd))?;
+        let (shell, output) = Shell::open(&cwd).ok()?;
+        let (events, inbox) = channel::channel();
+        let (screens, receiver) = mpsc::unbounded();
+        let forward = events.clone();
+        std::thread::spawn(move || {
+            let mut output = output;
+            while let Some(bytes) = futures::executor::block_on(output.next()) {
+                if forward.send(Event::Output(bytes)).is_err() {
+                    return;
+                }
+            }
+            let _ = forward.send(Event::Ended);
+        });
+        std::thread::spawn(move || host(shell, inbox, screens, cols, rows));
+        let events = std::sync::Mutex::new(events);
+        Some(ShellLink {
+            input: Box::new(move |input| {
+                if let Ok(events) = events.lock() {
+                    let _ = events.send(Event::Input(input));
+                }
+            }),
+            screens: receiver,
+        })
+    }
+}
+
+enum Event {
+    Input(ShellInput),
+    Output(Vec<u8>),
+    Ended,
+}
+
+fn size(cols: u16, rows: u16) -> PtySize {
+    PtySize {
+        rows,
+        cols,
+        pixel_width: 0,
+        pixel_height: 0,
+    }
+}
+
+fn host(
+    shell: Shell,
+    inbox: channel::Receiver<Event>,
+    screens: mpsc::UnboundedSender<Screen>,
+    cols: u16,
+    rows: u16,
+) {
+    let mut emulator = Emulator::new(cols, rows);
+    let _ = shell.master.resize(size(cols, rows));
+    while let Ok(first) = inbox.recv() {
+        let mut next = Some(first);
+        while let Some(event) = next.take() {
+            match event {
+                Event::Input(ShellInput::Keys { text }) => {
+                    emulator.scroll_to_bottom();
+                    let _ = shell.input.send(text.into_bytes());
+                }
+                Event::Input(ShellInput::Resize { cols, rows }) => {
+                    let (cols, rows) = (cols.clamp(8, 500), rows.clamp(2, 300));
+                    emulator.resize(cols, rows);
+                    let _ = shell.master.resize(size(cols, rows));
+                }
+                Event::Input(ShellInput::Scroll { lines }) => emulator.scroll(lines),
+                Event::Input(ShellInput::Close) => return,
+                Event::Output(bytes) => {
+                    let reply = emulator.feed(&bytes);
+                    if !reply.is_empty() {
+                        let _ = shell.input.send(reply);
+                    }
+                }
+                Event::Ended => {
+                    let _ = screens.unbounded_send(screen(&emulator));
+                    return;
+                }
+            }
+            next = inbox.recv_timeout(SETTLE).ok();
+        }
+        if screens.unbounded_send(screen(&emulator)).is_err() {
+            return;
+        }
+    }
+}
+
+fn color(color: CellColor) -> Color {
+    match color {
+        CellColor::Foreground | CellColor::Background => Color::Default,
+        CellColor::Indexed(index) if index < 16 => Color::Indexed(index),
+        CellColor::Indexed(index) => {
+            let (r, g, b) = terminal::view::indexed_rgb(bezel::theme::Appearance::Dark, index);
+            Color::Rgb(r, g, b)
+        }
+        CellColor::Rgb(r, g, b) => Color::Rgb(r, g, b),
+    }
+}
+
+fn style(cell: &CellSnapshot) -> u8 {
+    [
+        (cell.bold, BOLD),
+        (cell.dim, DIM),
+        (cell.italic, ITALIC),
+        (cell.underline, UNDERLINE),
+    ]
+    .into_iter()
+    .filter(|(on, _)| *on)
+    .fold(0, |style, (_, bit)| style | bit)
+}
+
+fn runs(line: &[CellSnapshot]) -> Vec<Run> {
+    let mut runs: Vec<Run> = Vec::new();
+    for cell in line.iter().filter(|cell| !cell.wide_spacer) {
+        let (fg, bg) = cell.display_colors();
+        let (fg, bg, style) = (color(fg), color(bg), style(cell));
+        let ch = if cell.hidden { ' ' } else { cell.ch };
+        match runs.last_mut() {
+            Some(run) if run.fg == fg && run.bg == bg && run.style == style => run.text.push(ch),
+            _ => runs.push(Run {
+                text: ch.to_string(),
+                fg,
+                bg,
+                style,
+            }),
+        }
+    }
+    if let Some(run) = runs.last_mut()
+        && run.bg == Color::Default
+    {
+        let kept = run.text.trim_end_matches(' ').len();
+        run.text.truncate(kept);
+    }
+    runs.retain(|run| !run.text.is_empty());
+    runs
+}
+
+fn screen(emulator: &Emulator) -> Screen {
+    Screen {
+        rows: emulator.lines().iter().map(|line| runs(line)).collect(),
+        cursor: emulator
+            .cursor()
+            .map(|cursor| (cursor.row as u16, cursor.col as u16)),
+        title: emulator.title().map(str::to_owned),
+        directory: emulator
+            .directory()
+            .map(|directory| directory.to_string_lossy().into_owned()),
+    }
+}
+
+#[cfg(test)]
+#[path = "../../tests/unit/remote_local.rs"]
+mod tests;
