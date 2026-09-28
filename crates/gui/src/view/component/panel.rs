@@ -956,6 +956,11 @@ impl Cydonia {
         cx.notify();
     }
 
+    pub(crate) fn hide_changes(&mut self, cx: &mut Context<Self>) {
+        self.set_changes_open(false, cx);
+        cx.notify();
+    }
+
     /// Put the panel up or down for the directory in front, and write that
     /// down.
     ///

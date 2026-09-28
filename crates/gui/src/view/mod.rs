@@ -24,6 +24,7 @@ pub mod search;
 pub mod section;
 pub mod settings;
 pub mod sidebar;
+pub mod swipe;
 pub mod table;
 
 #[cfg(test)]

@@ -433,6 +433,7 @@ pub struct Cydonia {
     pub(crate) sidebar_open: bool,
     pub(crate) sidebar_width: f32,
     pub(crate) drawer_front: Option<Front>,
+    pub(crate) swipe: Option<super::swipe::Swipe>,
     /// The window's bottom panel: its shell, and whether it is up.
     ///
     /// One to a window, like the sidebar and the right panel — every pane and
@@ -1007,6 +1008,7 @@ impl Cydonia {
             sidebar_open: !narrow(window),
             sidebar_width: SIDEBAR_WIDTH,
             drawer_front: None,
+            swipe: None,
             #[cfg(feature = "desktop")]
             terminal: None,
             changes_open: false,
@@ -1713,6 +1715,7 @@ impl Render for Cydonia {
                 )
             })
             .when(drawn, |root| root.child(self.drawer(window, cx)))
+            .child(self.swipe_listener(cx))
             .children(
                 self.workspace
                     .read(cx)
