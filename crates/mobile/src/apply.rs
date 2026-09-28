@@ -159,6 +159,10 @@ pub fn change(
 ) {
     match change {
         Change::Agents { agents } => {
+            workspace
+                .settings
+                .agents
+                .retain(|agent| agents.contains(&agent.name));
             for name in agents {
                 if !workspace
                     .settings

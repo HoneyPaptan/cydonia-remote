@@ -107,6 +107,21 @@ fn written(workspace: &mut Workspace, action: &Action, cx: &mut Context<Workspac
     }
 }
 
+fn agent_job(
+    id: String,
+    cx: &mut Context<Workspace>,
+    job: impl FnOnce(String) -> Result<()> + Send + 'static,
+) {
+    cx.spawn(async move |workspace, cx| {
+        let done = cx.background_executor().spawn(async move { job(id) }).await;
+        if let Err(error) = done {
+            eprintln!("agent job failed: {error:#}");
+        }
+        let _ = workspace.update(cx, |workspace, cx| workspace.reload_settings(cx));
+    })
+    .detach();
+}
+
 pub fn route(workspace: &mut Workspace, action: Action, cx: &mut Context<Workspace>) -> Outcome {
     if action.written_project().is_some() {
         return written(workspace, &action, cx);
@@ -207,6 +222,14 @@ pub fn route(workspace: &mut Workspace, action: Action, cx: &mut Context<Workspa
                 return rejected(Reason::UnknownSession);
             };
             workspace.archive_session(id, archived, cx);
+            Outcome::Accepted
+        }
+        Action::InstallAgent { id } => {
+            agent_job(id, cx, |id| crate::agent::install_listed(&id));
+            Outcome::Accepted
+        }
+        Action::RemoveAgent { id } => {
+            agent_job(id, cx, |id| crate::agent::remove(&id));
             Outcome::Accepted
         }
         Action::RemoveSession { key } => {

@@ -174,6 +174,14 @@ impl Sink for Commands {
         }
     }
 
+    fn agent(&self, id: &str, install: bool) {
+        let id = id.to_owned();
+        self.deliver(match install {
+            true => Action::InstallAgent { id },
+            false => Action::RemoveAgent { id },
+        });
+    }
+
     fn session(&self, project: &Path, record: &str, change: SessionChange) {
         let key = key(project, record);
         self.deliver(match change {

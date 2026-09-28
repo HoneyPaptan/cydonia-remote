@@ -21,8 +21,9 @@ use crate::model::settings::{self, Agent};
 use bezel::ui::icons::Icon;
 use cacp_agents::{Distribution, Installed, registry};
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 pub mod acp;
@@ -239,6 +240,50 @@ pub fn install(agent: &registry::Agent, on_line: impl FnMut(&str)) -> anyhow::Re
 }
 
 /// Take it off disk and out of `settings.toml`.
+static BUSY: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+fn busy() -> std::sync::MutexGuard<'static, BTreeSet<String>> {
+    BUSY.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+pub fn catalogue() -> Vec<remote::proto::AgentListing> {
+    let icons = cache_dir().map(|cache| cache.join("icons"));
+    let working = busy().clone();
+    listings()
+        .into_iter()
+        .map(|listing| {
+            let agent = listing.agent;
+            let icon = icons
+                .as_deref()
+                .and_then(|dir| cached(dir, &agent.id))
+                .and_then(|path| std::fs::read_to_string(path).ok());
+            remote::proto::AgentListing {
+                busy: working.contains(&agent.id),
+                installable: !matches!(agent.distribution, Distribution::Unsupported { .. }),
+                installed: listing.installed,
+                id: agent.id,
+                name: agent.name,
+                version: agent.version,
+                description: agent.description,
+                icon,
+            }
+        })
+        .collect()
+}
+
+pub fn install_listed(id: &str) -> anyhow::Result<()> {
+    let agent = listings()
+        .into_iter()
+        .map(|listing| listing.agent)
+        .find(|agent| agent.id == id)
+        .ok_or_else(|| anyhow::anyhow!("no agent {id} in the registry"))?;
+    settings::trust_agent(&agent.id, &source_mark(&agent))?;
+    busy().insert(agent.id.clone());
+    let done = install(&agent, |_| {});
+    busy().remove(&agent.id);
+    done
+}
+
 pub fn remove(id: &str) -> anyhow::Result<()> {
     Installed::remove(&settings::data_dir()?, id)?;
     settings::remove_agent(id)

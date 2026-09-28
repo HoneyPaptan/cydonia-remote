@@ -245,6 +245,12 @@ pub enum Action {
     RemoveSession {
         key: SessionKey,
     },
+    InstallAgent {
+        id: String,
+    },
+    RemoveAgent {
+        id: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -303,6 +309,7 @@ pub enum Query {
     ReadFile { path: String },
     WriteFile { path: String, text: String },
     Git { cwd: String, args: Vec<String> },
+    Agents,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -312,9 +319,21 @@ pub enum Answer {
     File { file: File },
     Written,
     Output(Output),
+    Agents { agents: Vec<AgentListing> },
     Failed { message: String },
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AgentListing {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub description: Option<String>,
+    pub installed: Option<String>,
+    pub installable: bool,
+    pub busy: bool,
+    pub icon: Option<String>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DirEntry {

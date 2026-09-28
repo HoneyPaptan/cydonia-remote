@@ -171,6 +171,11 @@ fn run_git(cwd: &Path, args: &[String]) -> Answer {
 impl Local for Laptop {
     fn answer(&self, query: Query) -> Answer {
         let path = match &query {
+            Query::Agents => {
+                return Answer::Agents {
+                    agents: crate::agent::catalogue(),
+                };
+            }
             Query::ReadDir { path } | Query::ReadFile { path } | Query::WriteFile { path, .. } => {
                 path
             }
@@ -184,6 +189,7 @@ impl Local for Laptop {
             Query::ReadFile { .. } => read_file(&path),
             Query::WriteFile { text, .. } => write_file(&path, text),
             Query::Git { args, .. } => run_git(&path, args),
+            Query::Agents => failed("Not a path"),
         }
     }
 

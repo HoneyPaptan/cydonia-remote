@@ -78,7 +78,7 @@ impl Section {
     /// the viewport — see [`SettingsWindow::agents_list`]. Everything else is
     /// a page of boxes, and the page scrolls it.
     pub(super) fn owns_scroll(&self) -> bool {
-        matches!(self, Self::Agents)
+        matches!(self, Self::Agents) && cfg!(feature = "desktop")
     }
 
     const ALL: [Self; 8] = [
@@ -166,6 +166,8 @@ pub struct SettingsWindow {
     /// which is the difference between "still looking" and "nothing here".
     #[cfg(feature = "desktop")]
     listings: Option<Vec<Listing>>,
+    #[cfg(not(feature = "desktop"))]
+    arming: Option<String>,
     /// Agents with an install or a removal running.
     #[cfg(feature = "desktop")]
     busy: HashSet<String>,
@@ -306,6 +308,8 @@ impl SettingsWindow {
             narrow: false,
             #[cfg(feature = "desktop")]
             listings: None,
+            #[cfg(not(feature = "desktop"))]
+            arming: None,
             #[cfg(feature = "desktop")]
             busy: HashSet::new(),
             #[cfg(feature = "desktop")]
