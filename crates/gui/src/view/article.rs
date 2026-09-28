@@ -701,6 +701,7 @@ impl Cydonia {
             window,
             cx,
         ))
+        .debug_selector(move || format!("article-row-{project}-{ix}"))
         .on_click(cx.listener(move |this, _, window, cx| {
             this.open_article(project, ix, window, cx);
         }))

@@ -145,3 +145,40 @@ fn a_desktop_width_opens_the_right_panel_on_arrival(cx: &mut gpui::TestAppContex
 
     assert!(panel_open(&root, visual), "a new directory opens with the panel up");
 }
+
+fn tap(selector: &'static str, visual: &mut gpui::VisualTestContext) {
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    let position = visual
+        .debug_bounds(selector)
+        .unwrap_or_else(|| panic!("{selector} is on screen"))
+        .center();
+    let down = gpui::MouseDownEvent {
+        button: gpui::MouseButton::Left,
+        position,
+        modifiers: gpui::Modifiers::default(),
+        click_count: 1,
+        first_mouse: false,
+    };
+    let up = gpui::MouseUpEvent {
+        button: gpui::MouseButton::Left,
+        position,
+        modifiers: gpui::Modifiers::default(),
+        click_count: 1,
+    };
+    visual.update(|window, cx| {
+        window.dispatch_event(gpui::PlatformInput::MouseDown(down), cx);
+        window.dispatch_event(gpui::PlatformInput::MouseUp(up), cx);
+    });
+}
+
+#[gpui::test]
+fn a_real_tap_on_an_entry_in_the_drawer_closes_it(cx: &mut gpui::TestAppContext) {
+    let scratch = Scratch::new("real-tap");
+    let (root, visual) = open_at_width(390., &scratch, cx);
+    root.update(visual, |root, cx| {
+        root.workspace.update(cx, |workspace, cx| workspace.new_article(cx));
+    });
+
+    tap("article-row-0-1", visual);
+    assert!(!root.read_with(visual, |root, _| root.sidebar_open));
+}

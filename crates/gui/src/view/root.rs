@@ -1397,15 +1397,14 @@ impl Cydonia {
                     .h_full()
                     .w(px(width))
                     .overflow_hidden()
-                    .on_click(|_, _, cx| cx.stop_propagation())
                     .on_mouse_down(
                         bezel::gpui::MouseButton::Left,
                         cx.listener(|this, _, _, cx| this.remember_drawer_front(cx)),
                     )
-                    .on_mouse_up(
-                        bezel::gpui::MouseButton::Left,
-                        cx.listener(|this, _, _, cx| this.close_drawer_on_arrival(cx)),
-                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        cx.stop_propagation();
+                        this.close_drawer_on_arrival(cx);
+                    }))
                     .child(self.sidebar(window, cx)),
             )
     }
