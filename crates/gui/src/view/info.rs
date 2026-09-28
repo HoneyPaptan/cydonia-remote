@@ -92,7 +92,7 @@ impl Cydonia {
         };
         let name = seed(name, "name this board…", cx);
         let key = seed(key, "KEY", cx);
-        window.focus(&name.read(cx).focus_handle(cx), cx);
+        crate::view::focus_for_typing(&name.read(cx).focus_handle(cx), window, cx);
         self.info = Some(BoardInfo {
             board: board.to_owned(),
             name,

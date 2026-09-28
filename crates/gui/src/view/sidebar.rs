@@ -2465,7 +2465,7 @@ impl Cydonia {
                 MouseButton::Left,
                 cx.listener(|this, _, window, cx| {
                     cx.stop_propagation();
-                    window.focus(&this.name_field.read(cx).focus_handle(cx), cx);
+                    crate::view::focus_for_typing(&this.name_field.read(cx).focus_handle(cx), window, cx);
                 }),
             )
             // Pressing anywhere else is finishing, not abandoning — the name
@@ -2522,7 +2522,7 @@ impl Cydonia {
         // See [`Cydonia::open_info`] — the other way round.
         self.info = None;
         self.renaming = Some(what);
-        window.focus(&self.name_field.read(cx).focus_handle(cx), cx);
+        crate::view::focus_for_typing(&self.name_field.read(cx).focus_handle(cx), window, cx);
         cx.notify();
     }
 

@@ -172,7 +172,7 @@ impl Cydonia {
             .cell_field
             .update(cx, |field, cx| field.set_content(text, cx));
         self.leaf_mut().cell = Some(at);
-        window.focus(&self.leaf().cell_field.read(cx).focus_handle(cx), cx);
+        crate::view::focus_for_typing(&self.leaf().cell_field.read(cx).focus_handle(cx), window, cx);
         cx.notify();
     }
 

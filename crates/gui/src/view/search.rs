@@ -188,7 +188,7 @@ impl Cydonia {
             field.set_content(query.unwrap_or_default(), cx);
         });
         self.refresh_search(cx);
-        window.focus(&self.search.field.read(cx).focus_handle(cx), cx);
+        crate::view::focus_for_typing(&self.search.field.read(cx).focus_handle(cx), window, cx);
         cx.notify();
     }
 

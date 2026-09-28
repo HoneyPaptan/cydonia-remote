@@ -29,6 +29,15 @@ pub mod sidebar;
 pub mod swipe;
 pub mod table;
 
+pub(crate) fn focus_for_typing(
+    handle: &bezel::gpui::FocusHandle,
+    window: &mut bezel::gpui::Window,
+    cx: &mut bezel::gpui::App,
+) {
+    window.focus(handle, cx);
+    window.request_virtual_keyboard();
+}
+
 #[cfg(test)]
 #[path = "../../tests/unit/clipboard.rs"]
 pub(crate) mod clipboard_tests;

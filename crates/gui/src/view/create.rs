@@ -107,7 +107,7 @@ impl Cydonia {
                 this.follow_key(&typed, cx);
             }
         });
-        window.focus(&name.read(cx).focus_handle(cx), cx);
+        crate::view::focus_for_typing(&name.read(cx).focus_handle(cx), window, cx);
         self.making = Some(Making {
             project,
             into,

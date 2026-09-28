@@ -220,7 +220,7 @@ impl Cydonia {
         // A page with no name is asking to be given one; a named one is asking
         // to be written in.
         match (unnamed, field, editor) {
-            (true, Some(field), _) => window.focus(&field.focus_handle(cx), cx),
+            (true, Some(field), _) => crate::view::focus_for_typing(&field.focus_handle(cx), window, cx),
             (_, _, Some(editor)) => window.focus(&editor.focus_handle(cx), cx),
             _ => {}
         }

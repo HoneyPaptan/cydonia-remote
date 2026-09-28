@@ -912,7 +912,7 @@ impl Cydonia {
         }
         let field = self.leaf_of(on).card_field.clone();
         self.leaf_of_mut(on).editing = Some(at);
-        window.focus(&field.read(cx).focus_handle(cx), cx);
+        crate::view::focus_for_typing(&field.read(cx).focus_handle(cx), window, cx);
         cx.notify();
     }
 
@@ -1468,7 +1468,7 @@ impl Cydonia {
             _ => "find…",
         };
         field.update(cx, |field, cx| field.set_placeholder(placeholder, cx));
-        window.focus(&field.read(cx).focus_handle(cx), cx);
+        crate::view::focus_for_typing(&field.read(cx).focus_handle(cx), window, cx);
         cx.notify();
     }
 
