@@ -1,5 +1,5 @@
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use remote::proto::{Ack, Command, Frame, Snapshot};
+use remote::proto::{Ack, Answer, Command, Frame, Query, Snapshot};
 use wasm_bindgen::{JsCast as _, JsValue, closure::Closure};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{CloseEvent, Headers, MessageEvent, Request, RequestInit, Response, WebSocket};
@@ -99,12 +99,33 @@ impl Endpoint {
         serde_json::from_str(&answer).map_err(|error| error.to_string())
     }
 
-    pub fn socket_url(&self, epoch: u64, seq: u64) -> String {
-        let base = self
-            .base
+    pub async fn query(&self, query: &Query) -> Result<Answer, String> {
+        let body = serde_json::to_string(query).map_err(|error| error.to_string())?;
+        let answer = self.call("POST", "/v1/query", Some(body)).await?;
+        serde_json::from_str(&answer).map_err(|error| error.to_string())
+    }
+
+    fn socket_base(&self) -> String {
+        self.base
             .replacen("https://", "wss://", 1)
-            .replacen("http://", "ws://", 1);
-        format!("{base}/v1/events?epoch={epoch}&seq={seq}")
+            .replacen("http://", "ws://", 1)
+    }
+
+    fn protocols(&self) -> js_sys::Array {
+        js_sys::Array::of2(&PROTOCOL.into(), &self.token.as_str().into())
+    }
+
+    pub fn shell(&self, cwd: &str, cols: u16, rows: u16) -> Result<WebSocket, String> {
+        let cwd: String = url_encode(cwd);
+        let address = format!(
+            "{}/v1/shell?cwd={cwd}&cols={cols}&rows={rows}",
+            self.socket_base()
+        );
+        WebSocket::new_with_str_sequence(&address, &self.protocols()).map_err(text)
+    }
+
+    pub fn socket_url(&self, epoch: u64, seq: u64) -> String {
+        format!("{}/v1/events?epoch={epoch}&seq={seq}", self.socket_base())
     }
 
     pub fn subscribe(
@@ -113,8 +134,7 @@ impl Endpoint {
         seq: u64,
         inbound: UnboundedSender<Inbound>,
     ) -> Result<Socket, String> {
-        let protocols = js_sys::Array::of2(&PROTOCOL.into(), &self.token.as_str().into());
-        let socket = WebSocket::new_with_str_sequence(&self.socket_url(epoch, seq), &protocols)
+        let socket = WebSocket::new_with_str_sequence(&self.socket_url(epoch, seq), &self.protocols())
             .map_err(text)?;
         let frames = inbound.clone();
         let message = Closure::<dyn FnMut(MessageEvent)>::new(move |event: MessageEvent| {
@@ -136,6 +156,10 @@ impl Endpoint {
             _close: close,
         })
     }
+}
+
+fn url_encode(text: &str) -> String {
+    js_sys::encode_uri_component(text).into()
 }
 
 fn listen(

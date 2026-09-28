@@ -320,6 +320,7 @@ async fn boot() -> Result<(), String> {
                 wanted: RefCell::new(None),
                 workspace: workspace.clone(),
             });
+            crate::laptop::install(endpoint.clone());
             gui::model::sink::install(Rc::new(Commands {
                 endpoint: endpoint.clone(),
                 opening: opening.clone(),

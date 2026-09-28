@@ -6,3 +6,5 @@ pub mod write;
 mod client;
 #[cfg(target_family = "wasm")]
 mod net;
+#[cfg(target_family = "wasm")]
+mod laptop;
