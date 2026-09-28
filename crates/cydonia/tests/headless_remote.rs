@@ -63,7 +63,12 @@ impl Home {
         let _ = std::fs::remove_dir_all(&root);
         let config = root.join("config/cydonia");
         std::fs::create_dir_all(&config).unwrap();
-        std::fs::create_dir_all(root.join("project")).unwrap();
+        std::fs::create_dir_all(root.join("project/.cydonia/boards")).unwrap();
+        std::fs::write(
+            root.join("project/.cydonia/boards/launch.toml"),
+            "name = \"Launch\"\nkey = \"LAUNCH\"\n",
+        )
+        .unwrap();
         std::fs::write(root.join("agent.py"), AGENT).unwrap();
         std::fs::write(
             config.join("settings.toml"),
@@ -152,10 +157,18 @@ fn eventually<T>(mut probe: impl FnMut() -> Option<T>) -> T {
     }
 }
 
+fn http() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(10)))
+        .build()
+        .into()
+}
+
 fn snapshot_of(daemon: &Daemon, home: &Home) -> Result<Snapshot, ureq::Error> {
     let token = std::fs::read_to_string(home.root.join("config/cydonia/remote-token"))
         .map_err(ureq::Error::Io)?;
-    let text = ureq::get(format!("{}/v1/snapshot", daemon.base))
+    let text = http()
+        .get(format!("{}/v1/snapshot", daemon.base))
         .header("Authorization", format!("Bearer {token}"))
         .call()?
         .body_mut()
@@ -169,7 +182,8 @@ fn send(daemon: &Daemon, home: &Home, id: &str, action: Action) -> Outcome {
         action,
     })
     .unwrap();
-    let text = ureq::post(format!("{}/v1/commands", daemon.base))
+    let text = http()
+        .post(format!("{}/v1/commands", daemon.base))
         .header("Authorization", format!("Bearer {}", home.token()))
         .header("Content-Type", "application/json")
         .send(body)

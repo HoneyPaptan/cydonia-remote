@@ -1,10 +1,12 @@
 use super::{route, view};
-use crate::model::{project::Project, session::ChatSession, settings, workspace::Workspace};
-use anyhow::Result;
-use artifact::{
-    project::{Project as _, Watching},
-    session::chat::ChatItem,
+use crate::model::{
+    project::Project,
+    session::ChatSession,
+    settings,
+    workspace::{Reloaded, Workspace},
 };
+use anyhow::Result;
+use artifact::{project::Project as _, session::chat::ChatItem};
 use bezel::gpui::{App, Entity};
 use futures::{StreamExt as _, channel::mpsc};
 use remote::{
@@ -33,43 +35,32 @@ struct Publisher {
     hub: Arc<Hub>,
     files: HashMap<PathBuf, BTreeMap<String, File>>,
     dirty: HashSet<PathBuf>,
-    watches: HashMap<PathBuf, Watching>,
     unloaded: HashMap<String, Vec<ChatItem>>,
-    knock: Option<mpsc::UnboundedSender<PathBuf>>,
 }
 
 impl Publisher {
-    fn new(hub: Arc<Hub>, knock: Option<mpsc::UnboundedSender<PathBuf>>) -> Self {
+    fn new(hub: Arc<Hub>) -> Self {
         Self {
             hub,
             files: HashMap::new(),
             dirty: HashSet::new(),
-            watches: HashMap::new(),
             unloaded: HashMap::new(),
-            knock,
         }
     }
 
     fn follow(&mut self, projects: &[Project]) {
         let open: HashSet<&PathBuf> = projects.iter().map(|project| &project.path).collect();
-        self.watches.retain(|path, _| open.contains(path));
         self.dirty.retain(|path| open.contains(path));
         self.files.retain(|path, _| open.contains(path));
         for project in projects {
-            if self.files.contains_key(&project.path) || self.dirty.contains(&project.path) {
-                continue;
-            }
-            self.dirty.insert(project.path.clone());
-            let Some(knock) = self.knock.clone() else {
-                continue;
-            };
-            let path = project.path.clone();
-            if let Some(watching) = project.store().watch(move || {
-                let _ = knock.unbounded_send(path.clone());
-            }) {
-                self.watches.insert(project.path.clone(), watching);
+            if !self.files.contains_key(&project.path) {
+                self.dirty.insert(project.path.clone());
             }
         }
+    }
+
+    fn reread(&mut self) {
+        self.dirty.extend(self.files.keys().cloned());
     }
 
     fn items(&mut self, project: &Project, chat: &ChatSession, record: &str) -> Vec<ChatItem> {
@@ -151,8 +142,7 @@ pub fn start(workspace: Entity<Workspace>, options: Options, cx: &mut App) -> Re
             }
         })?;
 
-    let (knock, mut knocks) = mpsc::unbounded();
-    let publisher = Rc::new(RefCell::new(Publisher::new(hub, Some(knock))));
+    let publisher = Rc::new(RefCell::new(Publisher::new(hub)));
     publisher.borrow_mut().publish(workspace.read(cx));
 
     let observed = publisher.clone();
@@ -161,13 +151,11 @@ pub fn start(workspace: Entity<Workspace>, options: Options, cx: &mut App) -> Re
     })
     .detach();
 
-    let watched = publisher.clone();
-    let reread = workspace.clone();
-    cx.spawn(async move |cx| {
-        while let Some(path) = knocks.next().await {
-            watched.borrow_mut().dirty.insert(path);
-            cx.update(|cx| watched.borrow_mut().publish(reread.read(cx)));
-        }
+    let reloaded = publisher.clone();
+    cx.subscribe(&workspace, move |workspace, _: &Reloaded, cx| {
+        let mut publisher = reloaded.borrow_mut();
+        publisher.reread();
+        publisher.publish(workspace.read(cx));
     })
     .detach();
 

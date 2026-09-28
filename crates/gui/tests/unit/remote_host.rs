@@ -84,7 +84,7 @@ fn prompt(request: u64) -> PermissionPrompt {
 #[test]
 fn the_mirror_carries_sessions_and_board_files() {
     let projects = vec![project_with_session("mirror")];
-    let mut publisher = Publisher::new(Hub::new(1), None);
+    let mut publisher = Publisher::new(Hub::new(1));
     let mirror = publisher.mirror(&projects, &[agent()]);
     let project = mirror.project(&projects[0].path.to_string_lossy()).unwrap();
     let session = &project.sessions["s1"];
@@ -98,7 +98,7 @@ fn the_mirror_carries_sessions_and_board_files() {
 fn publishing_twice_without_change_emits_nothing() {
     let projects = vec![project_with_session("quiet")];
     let hub = Hub::new(1);
-    let mut publisher = Publisher::new(hub.clone(), None);
+    let mut publisher = Publisher::new(hub.clone());
     let next = publisher.mirror(&projects, &[agent()]);
     publisher.hub.publish(next);
     let seq = hub.snapshot().seq;
@@ -111,7 +111,7 @@ fn publishing_twice_without_change_emits_nothing() {
 fn a_new_transcript_item_becomes_one_event() {
     let mut projects = vec![project_with_session("append")];
     let hub = Hub::new(1);
-    let mut publisher = Publisher::new(hub.clone(), None);
+    let mut publisher = Publisher::new(hub.clone());
     let next = publisher.mirror(&projects, &[agent()]);
     publisher.hub.publish(next);
     let before = hub.snapshot().seq;
@@ -127,7 +127,7 @@ fn a_new_transcript_item_becomes_one_event() {
 fn a_standing_prompt_is_waiting_for_permission_with_its_request_id() {
     let mut projects = vec![project_with_session("waiting")];
     projects[0].sessions[0].permission = Some(prompt(41));
-    let mut publisher = Publisher::new(Hub::new(1), None);
+    let mut publisher = Publisher::new(Hub::new(1));
     let mirror = publisher.mirror(&projects, &[agent()]);
     let header = &mirror.session(&key(&projects[0], "s1")).unwrap().header;
     assert_eq!(header.status, Status::WaitingForPermission);
@@ -163,4 +163,18 @@ fn only_the_standing_request_and_one_of_its_options_are_answerable() {
     assert!(super::route::standing(&chat, 7, "allow"));
     assert!(!super::route::standing(&chat, 6, "allow"));
     assert!(!super::route::standing(&chat, 7, "reject"));
+}
+
+#[test]
+fn files_are_exported_once_until_a_reload_asks_again() {
+    let projects = vec![project_with_session("reread")];
+    let mut publisher = Publisher::new(Hub::new(1));
+    publisher.mirror(&projects, &[agent()]);
+    assert!(publisher.dirty.is_empty());
+    std::fs::remove_file(projects[0].path.join(".cydonia/boards/road.toml")).unwrap();
+    let stale = publisher.mirror(&projects, &[agent()]);
+    assert!(stale.projects[0].files.contains_key("boards/road.toml"));
+    publisher.reread();
+    let fresh = publisher.mirror(&projects, &[agent()]);
+    assert!(!fresh.projects[0].files.contains_key("boards/road.toml"));
 }
