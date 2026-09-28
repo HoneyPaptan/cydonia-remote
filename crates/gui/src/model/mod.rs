@@ -14,6 +14,7 @@ pub mod media;
 pub mod migrate;
 pub mod notify;
 pub mod project;
+pub mod relay;
 pub mod session;
 pub mod session_preferences;
 pub mod settings;

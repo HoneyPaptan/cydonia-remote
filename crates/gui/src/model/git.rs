@@ -1,11 +1,14 @@
 //! Read-only Git queries with literal, non-UTF-8 path support.
 
 use anyhow::{Context as _, Result, bail};
+#[cfg(feature = "desktop")]
+use std::{
+    io::Read as _,
+    process::{Command, Stdio},
+};
 use std::{
     ffi::OsString,
-    io::Read as _,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
 };
 
 pub mod preview;
@@ -43,6 +46,7 @@ pub struct Repository {
     pub files: Vec<Change>,
 }
 
+#[cfg(feature = "desktop")]
 fn command(root: &Path) -> Command {
     let mut git = Command::new("git");
     git.arg("--literal-pathspecs")
@@ -68,35 +72,32 @@ fn os_path(bytes: &[u8]) -> PathBuf {
 }
 
 pub fn status(cwd: &Path) -> Result<Option<Repository>> {
-    let output = command(cwd)
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-        .context("Could not run Git")?;
-    if !output.status.success() {
-        let message = String::from_utf8_lossy(&output.stderr);
-        if message.contains("not a git repository") {
+    let found = run(cwd, &words(["rev-parse", "--show-toplevel"])).context("Could not run Git")?;
+    if !found.success {
+        if found.stderr.contains("not a git repository") {
             return Ok(None);
         }
-        bail!("{}", message.trim());
+        bail!("{}", found.stderr.trim());
     }
     // Remove Git's terminator only: whitespace can be part of the root path.
-    let root = os_path(output.stdout.strip_suffix(b"\n").unwrap_or(&output.stdout));
-    let output = command(&root)
-        .args([
+    let root = os_path(found.stdout.strip_suffix(b"\n").unwrap_or(&found.stdout));
+    let listed = run(
+        &root,
+        &words([
             "status",
             "--porcelain=v1",
             "--renames",
             "-z",
             "--untracked-files=all",
             "--ignore-submodules=none",
-        ])
-        .output()?;
-    if !output.status.success() {
-        bail!("{}", String::from_utf8_lossy(&output.stderr).trim());
+        ]),
+    )?;
+    if !listed.success {
+        bail!("{}", listed.stderr.trim());
     }
     Ok(Some(Repository {
         root,
-        files: parse_status(&output.stdout)?,
+        files: parse_status(&listed.stdout)?,
     }))
 }
 
@@ -161,8 +162,7 @@ fn parse_status(bytes: &[u8]) -> Result<Vec<Change>> {
 }
 
 pub fn diff(root: &Path, change: &Change) -> Result<String> {
-    let mut git = command(root);
-    git.args([
+    let mut args = words([
         "diff",
         "--no-ext-diff",
         "--no-textconv",
@@ -171,25 +171,27 @@ pub fn diff(root: &Path, change: &Change) -> Result<String> {
     ]);
     if change.area == Area::Untracked {
         // Let Git handle untracked file metadata; exit 1 means a diff.
-        git.args([
+        args.extend(words([
             "--no-index",
             "--",
             if cfg!(windows) { "NUL" } else { "/dev/null" },
-        ])
-        .arg(&change.path);
+        ]));
+        args.push(change.path.clone().into_os_string());
     } else {
         if change.area == Area::Staged {
-            git.arg("--cached");
+            args.push("--cached".into());
         }
-        git.arg("--").arg(&change.path);
+        args.push("--".into());
+        args.push(change.path.clone().into_os_string());
         if let Some(original) = &change.original {
-            git.arg(original);
+            args.push(original.clone().into_os_string());
         }
     }
     // Bound output before collecting large generated patches.
-    let (exit, mut bytes, truncated) = output(git)?;
-    let differs = change.area == Area::Untracked && exit.code() == Some(1);
-    if !truncated && !exit.success() && !differs {
+    let ran = run(root, &args)?;
+    let (truncated, mut bytes) = (ran.truncated, ran.stdout);
+    let differs = change.area == Area::Untracked && ran.code == Some(1);
+    if !truncated && !ran.success && !differs {
         bail!("Git could not read this diff. Refresh to try again.");
     }
     bytes.truncate(PATCH_LIMIT as usize);
@@ -204,22 +206,70 @@ pub fn diff(root: &Path, change: &Change) -> Result<String> {
 }
 
 /// Bound patch and source reads, reporting truncation to callers.
-fn output(mut git: Command) -> Result<(std::process::ExitStatus, Vec<u8>, bool)> {
-    let mut child = git.stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
-    let mut bytes = Vec::new();
+pub struct Ran {
+    pub success: bool,
+    pub code: Option<i32>,
+    pub stdout: Vec<u8>,
+    pub stderr: String,
+    pub truncated: bool,
+}
+
+fn words<const N: usize>(words: [&str; N]) -> Vec<OsString> {
+    words.into_iter().map(OsString::from).collect()
+}
+
+#[cfg(feature = "desktop")]
+pub fn run(cwd: &Path, args: &[OsString]) -> Result<Ran> {
+    let mut git = command(cwd);
+    git.args(args);
+    let mut child = git.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
+    let mut stdout = Vec::new();
     let read = child
         .stdout
         .take()
         .context("Missing Git output")?
         .take(PATCH_LIMIT + 1)
-        .read_to_end(&mut bytes);
-    let truncated = bytes.len() as u64 > PATCH_LIMIT;
+        .read_to_end(&mut stdout);
+    let truncated = stdout.len() as u64 > PATCH_LIMIT;
     if truncated || read.is_err() {
         let _ = child.kill();
     }
+    let mut stderr = String::new();
+    if let Some(mut errors) = child.stderr.take() {
+        let _ = errors.read_to_string(&mut stderr);
+    }
     let exit = child.wait()?;
     read?;
-    Ok((exit, bytes, truncated))
+    Ok(Ran {
+        success: exit.success(),
+        code: exit.code(),
+        stdout,
+        stderr,
+        truncated,
+    })
+}
+
+#[cfg(not(feature = "desktop"))]
+pub fn run(cwd: &Path, args: &[OsString]) -> Result<Ran> {
+    use remote::proto::{Answer, Query};
+    let query = Query::Git {
+        cwd: cwd.to_string_lossy().into_owned(),
+        args: args
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect(),
+    };
+    match super::relay::ask(query)? {
+        Answer::Output(output) => Ok(Ran {
+            success: output.success,
+            code: output.code,
+            stdout: output.stdout.0,
+            stderr: output.stderr,
+            truncated: output.truncated,
+        }),
+        Answer::Failed { message } => bail!("{message}"),
+        _ => bail!("The laptop answered something else"),
+    }
 }
 
 #[cfg(all(test, unix))]

@@ -118,7 +118,7 @@ impl Files {
         });
         let poll = cx.spawn(async move |this, cx| {
             loop {
-                cx.background_executor().timer(Duration::from_secs(3)).await;
+                crate::model::relay::pause(cx.background_executor(), Duration::from_secs(3)).await;
                 if this
                     .update(cx, |this, cx| {
                         if !this.loading {
@@ -181,6 +181,7 @@ impl Files {
                         this.truncated = truncated;
                         this.error = None;
                     }
+                    Err(error) if crate::model::relay::is_pending(&error) => {}
                     Err(error) => this.error = Some(error.to_string()),
                 }
                 cx.notify();

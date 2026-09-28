@@ -1,12 +1,13 @@
 //! Map patch lines to syntax tokens from complete source snapshots.
 
-use super::{Area, Change, PATCH_LIMIT, command, output};
+use super::{Area, Change, PATCH_LIMIT, run};
 use crate::model::language;
 use bezel::theme::HighlightKind;
+#[cfg(feature = "desktop")]
+use std::io::Read as _;
 use std::{
     collections::HashSet,
     ffi::OsString,
-    io::Read as _,
     ops::Range,
     path::{Path, PathBuf},
     sync::Arc,
@@ -172,13 +173,19 @@ fn versions(root: &Path, file: &Change) -> (Option<String>, Option<String>) {
     let blob = |revision: &str, path: &Path| {
         let mut spec = OsString::from(revision);
         spec.push(path);
-        let mut git = command(root);
-        git.args(["cat-file", "blob"]).arg(spec);
-        let (exit, bytes, truncated) = output(git).ok()?;
-        (exit.success() && !truncated && !bytes.contains(&0))
+        let ran = run(root, &["cat-file".into(), "blob".into(), spec]).ok()?;
+        (ran.success && !ran.truncated && !ran.stdout.contains(&0))
+            .then(|| String::from_utf8(ran.stdout).ok())
+            .flatten()
+    };
+    #[cfg(not(feature = "desktop"))]
+    let working = || {
+        let bytes = crate::model::disk::read(&root.join(&file.path)).ok()?;
+        (bytes.len() as u64 <= PATCH_LIMIT && !bytes.contains(&0))
             .then(|| String::from_utf8(bytes).ok())
             .flatten()
     };
+    #[cfg(feature = "desktop")]
     let working = || {
         let path = root.join(&file.path);
         // Symlink patches show a target path, not the target's source code.

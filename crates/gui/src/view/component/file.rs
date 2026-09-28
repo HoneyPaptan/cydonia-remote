@@ -201,7 +201,7 @@ impl FileView {
                 {
                     return;
                 }
-                cx.background_executor().timer(Duration::from_secs(3)).await;
+                crate::model::relay::pause(cx.background_executor(), Duration::from_secs(3)).await;
             }
         });
         let grammar_poll = cx.spawn(async move |this, cx| {
@@ -306,6 +306,7 @@ impl FileView {
                 }
                 self.ready = true;
             }
+            Err(error) if crate::model::relay::is_pending(&error) => self.loading = true,
             Err(error) => self.error = Some(error.to_string()),
         }
         cx.notify();

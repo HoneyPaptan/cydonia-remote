@@ -215,6 +215,9 @@ fn applications(_: &Path) -> Result<Vec<Application>> {
         ("Cursor", "cursor"),
         ("Sublime Text", "subl"),
     ];
+    if cfg!(target_family = "wasm") {
+        return Ok(Vec::new());
+    }
     let path = std::env::var_os("PATH").unwrap_or_default();
     #[cfg(windows)]
     let find = {

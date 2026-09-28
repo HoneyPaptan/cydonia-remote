@@ -20,7 +20,30 @@ pub fn read_dir(path: &Path) -> io::Result<Vec<(bool, PathBuf)>> {
 }
 
 #[cfg(not(feature = "desktop"))]
+fn relayed(query: remote::proto::Query) -> io::Result<remote::proto::Answer> {
+    match super::relay::ask(query) {
+        Ok(remote::proto::Answer::Failed { message }) => Err(io::Error::other(message)),
+        Ok(answer) => Ok(answer),
+        Err(_) => Err(io::ErrorKind::WouldBlock.into()),
+    }
+}
+
+#[cfg(not(feature = "desktop"))]
+fn text(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+#[cfg(not(feature = "desktop"))]
 pub fn read_dir(path: &Path) -> io::Result<Vec<(bool, PathBuf)>> {
+    if super::relay::installed() {
+        return match relayed(remote::proto::Query::ReadDir { path: text(path) })? {
+            remote::proto::Answer::Dir { entries } => Ok(entries
+                .into_iter()
+                .map(|entry| (entry.directory, PathBuf::from(entry.path)))
+                .collect()),
+            _ => Err(io::ErrorKind::InvalidData.into()),
+        };
+    }
     let held = held();
     let mut found: Vec<(bool, PathBuf)> = Vec::new();
     for file in held.keys() {
@@ -45,6 +68,12 @@ pub fn read_dir(path: &Path) -> io::Result<Vec<(bool, PathBuf)>> {
 
 #[cfg(not(feature = "desktop"))]
 pub fn read(path: &Path) -> io::Result<Vec<u8>> {
+    if super::relay::installed() {
+        return match relayed(remote::proto::Query::ReadFile { path: text(path) })? {
+            remote::proto::Answer::File { file } => Ok(file.0),
+            _ => Err(io::ErrorKind::InvalidData.into()),
+        };
+    }
     held()
         .get(path)
         .cloned()
@@ -53,6 +82,21 @@ pub fn read(path: &Path) -> io::Result<Vec<u8>> {
 
 #[cfg(not(feature = "desktop"))]
 pub fn write(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    if super::relay::installed() {
+        let text = String::from_utf8(bytes.to_vec())
+            .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+        super::relay::assume(
+            remote::proto::Query::ReadFile { path: self::text(path) },
+            remote::proto::Answer::File {
+                file: remote::proto::File(bytes.to_vec()),
+            },
+        );
+        super::relay::tell(remote::proto::Query::WriteFile {
+            path: self::text(path),
+            text,
+        });
+        return Ok(());
+    }
     held().insert(path.to_owned(), bytes.to_vec());
     Ok(())
 }
