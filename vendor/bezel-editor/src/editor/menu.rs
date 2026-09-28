@@ -31,6 +31,9 @@ const TABLE_HANDLE_LONG: f32 = 20.0;
 const CHIP_PAD_X: f32 = 6.0;
 const CHIP_PAD_Y: f32 = 3.0;
 
+const SLASH_MENU_HEIGHT: f32 = 280.0;
+const SLASH_MENU_MARGIN: f32 = 8.0;
+
 /// Selector the interaction tests look the painted menu up by.
 pub const SLASH_MENU: &str = "slash-menu";
 /// The gutter handle's, for the same reason.
@@ -664,7 +667,17 @@ impl Editor {
         // things, and the bug that shipped was the second one failing while
         // the first looked fine.
         .debug_selector(|| SLASH_MENU.to_string())
-        .max_h(px(280.0));
+        .max_h(px(SLASH_MENU_HEIGHT));
+        let below = window.viewport_size().height - (point.y + line_height);
+        let above = point.y;
+        if below < px(SLASH_MENU_HEIGHT + SLASH_MENU_MARGIN) && above > below {
+            return Some(ui::popover::menu_above_at(
+                "slash-menu",
+                point,
+                card.into_any_element(),
+                None,
+            ));
+        }
         Some(ui::popover::menu_at(
             "slash-menu",
             gpui::point(point.x, point.y + line_height),

@@ -230,6 +230,15 @@ pub fn anchored_menu_below_end(
 
 /// A floating menu at an explicit window position (context menus). Occludes
 /// like [`anchored_menu`] so row clicks never reach elements underneath.
+pub fn menu_above_at(
+    id: impl Into<SharedString>,
+    position: Point<Pixels>,
+    content: AnyElement,
+    closing: Option<web_time::Instant>,
+) -> AnyElement {
+    menu_layer(id, content, closing, Anchor::BottomLeft, Some(position), 0.0)
+}
+
 pub fn menu_at(
     id: impl Into<SharedString>,
     position: Point<Pixels>,

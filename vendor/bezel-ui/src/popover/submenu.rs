@@ -79,8 +79,7 @@ pub fn place(
     };
     let side = match (fits(prefer), fits(prefer.other())) {
         (false, true) => prefer.other(),
-        // Neither side fits: the preferred one is snapped below, which is what
-        // a window narrower than two panels can do.
+        (false, false) => return drop_below(anchor, size, viewport, margin, prefer),
         _ => prefer,
     };
 
@@ -102,6 +101,36 @@ pub fn place(
     }
     (origin, side)
 }
+
+fn drop_below(
+    anchor: Bounds<Pixels>,
+    size: Size<Pixels>,
+    viewport: Size<Pixels>,
+    margin: Pixels,
+    side: Side,
+) -> (Point<Pixels>, Side) {
+    let mut origin = point(anchor.left() + px(STEP_IN), anchor.bottom());
+    if origin.x + size.width + margin > viewport.width {
+        origin.x = viewport.width - size.width - margin;
+    }
+    if origin.x < margin {
+        origin.x = margin;
+    }
+    if origin.y + size.height + margin > viewport.height {
+        let above = anchor.origin.y + px(MENU_PAD) - size.height;
+        origin.y = if above >= margin {
+            above
+        } else {
+            viewport.height - size.height - margin
+        };
+    }
+    if origin.y < margin {
+        origin.y = margin;
+    }
+    (origin, side)
+}
+
+const STEP_IN: f32 = 24.0;
 
 /// The panel a submenu row drops, ready to be mounted on that row — which must
 /// be `relative()`, since everything here is placed against it.
@@ -130,7 +159,7 @@ pub(super) fn layer(content: AnyElement, chain: &Chain) -> AnyElement {
                 .top(px(-MENU_PAD))
                 .left(px(-MENU_PAD))
                 .right(px(-MENU_PAD))
-                .h_0(),
+                .bottom_0(),
         )
         .child(
             // The panel's own layout context: a zero-size absolute box, which
