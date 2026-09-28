@@ -1524,6 +1524,16 @@ impl Cydonia {
         )
     }
 
+    #[cfg(not(feature = "desktop"))]
+    fn covered_by_sheet(&self, window: &Window) -> bool {
+        self.settings_sheet.is_some() && narrow(window)
+    }
+
+    #[cfg(feature = "desktop")]
+    fn covered_by_sheet(&self, _: &Window) -> bool {
+        false
+    }
+
     #[cfg(feature = "desktop")]
     fn settings_sheet(&self, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
         let _ = (window, cx);
@@ -1651,7 +1661,9 @@ impl Render for Cydonia {
         self.sync_changes(window, cx);
         self.publish_shown(cx);
         let docked = self.sidebar_docked(window);
-        let drawn = self.sidebar_open && !docked;
+        let covered = self.covered_by_sheet(window);
+        let docked = docked && !covered;
+        let drawn = self.sidebar_open && !docked && !covered;
         let theme = Theme::of(cx).clone();
         let root = div()
             .key_context("Cydonia")
@@ -1709,7 +1721,7 @@ impl Render for Cydonia {
             // a field keeps its focus through a click anywhere else.
             .child(div().track_focus(&self.focus))
             .when(docked, |root| root.child(self.sidebar(window, cx)))
-            .child(self.detail(window, cx))
+            .when(!covered, |root| root.child(self.detail(window, cx)))
             // Rides on the seam between the sidebar and the detail column
             // rather than sitting in flow, so neither gives up a column.
             .when(docked, |root| {
