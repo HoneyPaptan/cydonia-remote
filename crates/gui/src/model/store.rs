@@ -91,10 +91,13 @@ macro_rules! each {
 }
 
 impl Store {
-    fn relay(&self, write: impl FnOnce() -> Write) {
-        if let (Store::Relayed(_, path), Some(sink)) = (self, sink::get()) {
+    fn relayed<T>(&self, done: Result<T>, write: impl FnOnce() -> Write) -> Result<T> {
+        if done.is_ok()
+            && let (Store::Relayed(_, path), Some(sink)) = (self, sink::get())
+        {
             sink.write(path, write());
         }
+        done
     }
 }
 
@@ -108,24 +111,24 @@ impl Project for Store {
     }
 
     fn create_board(&self, name: &str, key: &str) -> Result<Board> {
-        let done = each!(self, store => store.create_board(name, key))?;
-        self.relay(|| Write::CreateBoard {
-            name: name.to_owned(),
-            key: key.to_owned(),
-        });
-        Ok(done)
+        self.relayed(each!(self, store => store.create_board(name, key)), || {
+            Write::CreateBoard {
+                name: name.to_owned(),
+                key: key.to_owned(),
+            }
+        })
     }
 
     fn save_board(&self, board: &mut Board) -> Result<()> {
-        let done = each!(self, store => store.save_board(board))?;
-        self.relay(|| Write::SaveBoard(board.clone()));
-        Ok(done)
+        self.relayed(each!(self, store => store.save_board(board)), || {
+            Write::SaveBoard(board.clone())
+        })
     }
 
     fn remove_board(&self, id: &str) -> Result<()> {
-        let done = each!(self, store => store.remove_board(id))?;
-        self.relay(|| Write::RemoveBoard(id.to_owned()));
-        Ok(done)
+        self.relayed(each!(self, store => store.remove_board(id)), || {
+            Write::RemoveBoard(id.to_owned())
+        })
     }
 
     fn sessions(&self) -> Vec<Record> {
@@ -157,9 +160,9 @@ impl Project for Store {
     }
 
     fn create_article(&self, markdown: &str) -> Result<Article> {
-        let done = each!(self, store => store.create_article(markdown))?;
-        self.relay(|| Write::CreateArticle(markdown.to_owned()));
-        Ok(done)
+        self.relayed(each!(self, store => store.create_article(markdown)), || {
+            Write::CreateArticle(markdown.to_owned())
+        })
     }
 
     fn read_article(&self, id: &str) -> Result<String> {
@@ -167,12 +170,13 @@ impl Project for Store {
     }
 
     fn write_article(&self, id: &str, markdown: &str) -> Result<()> {
-        let done = each!(self, store => store.write_article(id, markdown))?;
-        self.relay(|| Write::WriteArticle {
-            id: id.to_owned(),
-            markdown: markdown.to_owned(),
-        });
-        Ok(done)
+        self.relayed(
+            each!(self, store => store.write_article(id, markdown)),
+            || Write::WriteArticle {
+                id: id.to_owned(),
+                markdown: markdown.to_owned(),
+            },
+        )
     }
 
     fn properties(&self, id: &str) -> Properties {
@@ -180,18 +184,19 @@ impl Project for Store {
     }
 
     fn save_properties(&self, id: &str, properties: &Properties) -> Result<()> {
-        let done = each!(self, store => store.save_properties(id, properties))?;
-        self.relay(|| Write::SaveProperties {
-            id: id.to_owned(),
-            properties: properties.clone(),
-        });
-        Ok(done)
+        self.relayed(
+            each!(self, store => store.save_properties(id, properties)),
+            || Write::SaveProperties {
+                id: id.to_owned(),
+                properties: properties.clone(),
+            },
+        )
     }
 
     fn remove_article(&self, id: &str) -> Result<()> {
-        let done = each!(self, store => store.remove_article(id))?;
-        self.relay(|| Write::RemoveArticle(id.to_owned()));
-        Ok(done)
+        self.relayed(each!(self, store => store.remove_article(id)), || {
+            Write::RemoveArticle(id.to_owned())
+        })
     }
 
     fn asset(&self, id: &str, name: &str) -> Result<Vec<u8>> {
