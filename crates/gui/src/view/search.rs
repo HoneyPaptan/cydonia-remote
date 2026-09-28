@@ -527,6 +527,7 @@ impl Cydonia {
                 .flex_col()
                 .items_center()
                 .pt(px(96.))
+                .px(px(12.))
                 .bg(theme.scrim())
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.dismiss_search(&DismissSearch, window, cx)
@@ -534,7 +535,8 @@ impl Cydonia {
                 .child(
                     div()
                         .id("search-palette")
-                        .w(px(560.))
+                        .w_full()
+                        .max_w(px(560.))
                         .max_h(px(440.))
                         .flex()
                         .flex_col()

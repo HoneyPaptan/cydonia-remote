@@ -26,7 +26,7 @@ use bezel::{
     ui::{
         icons,
         input::TextField,
-        widgets::{Content, Controls, Layout, Scaffolding},
+        widgets::{Buttons as _, Content, Controls, Layout, Scaffolding},
     },
 };
 #[cfg(feature = "desktop")]
@@ -156,6 +156,12 @@ pub struct SettingsWindow {
     /// The press on the window's [`crate::view::chrome::grip`].
     drag: bezel::ui::titlebar::DragState,
     section: Section,
+    /// Whether a section's page is up rather than the list of sections. Only
+    /// read on a phone, where the two do not fit side by side and stand one
+    /// after the other instead.
+    paged: bool,
+    /// Whether the last frame was drawn at phone width.
+    narrow: bool,
     /// The catalog, once it has been fetched. `None` while it is in flight —
     /// which is the difference between "still looking" and "nothing here".
     #[cfg(feature = "desktop")]
@@ -296,6 +302,8 @@ impl SettingsWindow {
             drag: Default::default(),
             workspace,
             section,
+            paged: section != Section::General,
+            narrow: false,
             #[cfg(feature = "desktop")]
             listings: None,
             #[cfg(feature = "desktop")]
@@ -473,16 +481,31 @@ impl SettingsWindow {
         cx.notify();
     }
 
-    fn sidebar(&self, cx: &Context<Self>) -> impl IntoElement + use<> {
+    /// Step back from a section's page to the list, where the two stand one
+    /// after the other. False where there is nothing to step back to.
+    pub fn back(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.narrow || !self.paged {
+            return false;
+        }
+        self.paged = false;
+        cx.notify();
+        true
+    }
+
+    fn sidebar(&self, narrow: bool, cx: &Context<Self>) -> impl IntoElement + use<> {
         let theme = Theme::of(cx).clone();
         let painter = Painter::of(cx);
         div()
             .flex_none()
-            .w(px(SIDEBAR_WIDTH))
+            .when(narrow, |column| column.w_full())
+            .when(!narrow, |column| {
+                column
+                    .w(px(SIDEBAR_WIDTH))
+                    .border_r_1()
+                    .border_color(theme.border)
+            })
             .h_full()
             .bg(theme.surface)
-            .border_r_1()
-            .border_color(theme.border)
             .flex()
             .flex_col()
             .gap(px(2.))
@@ -494,6 +517,14 @@ impl SettingsWindow {
                 true => HEADER_HEIGHT,
                 false => 12.,
             }))
+            .when(narrow, |column| {
+                column.child(
+                    div()
+                        .px(px(8.))
+                        .pb(px(12.))
+                        .child(theme.page_header("Settings", None)),
+                )
+            })
             .children(
                 Section::ALL
                     .into_iter()
@@ -508,7 +539,10 @@ impl SettingsWindow {
                                 Fade::new(painter, format!("section-{ix}")),
                             )
                             .id(("section", ix))
-                            .on_click(cx.listener(move |this, _, _, cx| this.show(section, cx)))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.paged = true;
+                                this.show(section, cx);
+                            }))
                     }),
             )
     }
@@ -535,6 +569,32 @@ impl Render for SettingsWindow {
                 .child(chrome::grip("settings-grip", &self.drag, window))
                 .children(chrome::caption(CaptionSide::Right, window, cx))
         });
+        let narrow = crate::view::root::narrow(window);
+        self.narrow = narrow;
+        let listed = !narrow || !self.paged;
+        let back = narrow.then(|| {
+            theme
+                .ghost("settings-back")
+                .flex_none()
+                .mb(px(12.))
+                .px(px(6.))
+                .py(px(4.))
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(6.))
+                .text_color(theme.text_muted)
+                .child(
+                    icons::icon(icons::arrows::ArrowLeft)
+                        .size(px(16.))
+                        .text_color(theme.text_muted),
+                )
+                .child("Settings")
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.paged = false;
+                    cx.notify();
+                }))
+        });
         let root = div()
             .size_full()
             .relative()
@@ -544,8 +604,8 @@ impl Render for SettingsWindow {
             .font_family(theme.font_sans.clone())
             .text_color(theme.text)
             .text_style(TextStyle::Body)
-            .child(self.sidebar(cx))
-            .child(
+            .when(listed, |root| root.child(self.sidebar(narrow, cx)))
+            .when(!narrow || self.paged, |root| root.child(
                 div()
                     .id("settings-body")
                     .flex_1()
@@ -556,8 +616,8 @@ impl Render for SettingsWindow {
                     // would be two bars down one column.
                     .when(owns_scroll, |el| el.overflow_hidden())
                     .when(!owns_scroll, |el| el.overflow_y_scroll())
-                    .px(px(32.))
-                    .py(px(32.))
+                    .px(px(if narrow { 16. } else { 32. }))
+                    .py(px(if narrow { 12. } else { 32. }))
                     .when(strip.is_some(), |el| el.pt(px(HEADER_HEIGHT)))
                     .flex()
                     .flex_col()
@@ -569,6 +629,7 @@ impl Render for SettingsWindow {
                             .when(owns_scroll, |el| el.flex_1().min_h_0())
                             .flex()
                             .flex_col()
+                            .children(back)
                             // The header block, held off its body by the gap
                             // that separates any two groups. Nothing set this
                             // before, so the page title leaned on `group_box`'s
@@ -611,7 +672,7 @@ impl Render for SettingsWindow {
                         .fill()
                         .into_any_element(),
                     }),
-            )
+            ))
             .children(strip)
             .children(self.cover_dialog(cx))
             .children(self.trust_dialog(cx));

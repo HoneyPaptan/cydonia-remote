@@ -285,15 +285,18 @@ impl Cydonia {
                         })),
                 }
             }))
+            // Before the right panel's toggle rather than after it, so that
+            // toggle holds the right edge with nothing open, as it does beside
+            // a title.
+            .when(bare, |band| {
+                band.child(chrome::grip("header-grip", &self.drag, window))
+            })
             .children(
                 // Nothing to open it on where there is no directory in front
                 // — see [`Cydonia::shell_cwd`].
                 (!self.changes_open && self.shell_cwd(cx).is_some())
                     .then(|| self.changes_toggle(cx)),
             )
-            .when(bare, |band| {
-                band.child(chrome::grip("header-grip", &self.drag, window))
-            })
             .children(
                 right
                     .then(|| chrome::caption(CaptionSide::Right, window, cx))

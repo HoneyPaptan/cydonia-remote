@@ -126,8 +126,9 @@ const CONTENT_MATERIAL: Material = Material::UltraThick;
 
 /// The header strip's height, measured off `../desktop`: between Cursor's 34
 /// and Notion's 36, and tall enough to hold the 14px traffic lights macOS 26
-/// draws without crowding them.
-pub(crate) const HEADER_HEIGHT: f32 = 36.;
+/// draws without crowding them. Taller on the phone, where the strip sits
+/// straight under the status bar and a thumb has to find its controls.
+pub(crate) const HEADER_HEIGHT: f32 = if cfg!(feature = "desktop") { 36. } else { 52. };
 
 /// The pill at rest, and the agent mark beside it. Half of it is the stadium's
 /// radius.
@@ -1459,9 +1460,10 @@ impl Cydonia {
 
     /// The settings page over a scrim that takes the press putting it away.
     #[cfg(not(feature = "desktop"))]
-    fn settings_sheet(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    fn settings_sheet(&self, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
         let sheet = self.settings_sheet.clone()?;
         let theme = Theme::of(cx).clone();
+        let narrow = narrow(window);
         Some(
             div()
                 .id("settings-scrim")
@@ -1470,7 +1472,7 @@ impl Cydonia {
                 .flex()
                 .items_center()
                 .justify_center()
-                .p(px(24.))
+                .when(!narrow, |scrim| scrim.p(px(24.)))
                 .bg(theme.scrim())
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.settings_sheet = None;
@@ -1481,12 +1483,15 @@ impl Cydonia {
                         .id("settings-sheet")
                         .w_full()
                         .h_full()
-                        .max_w(px(900.))
-                        .max_h(px(620.))
                         .overflow_hidden()
-                        .rounded(px(Theme::panel_radius()))
-                        .border_1()
-                        .border_color(theme.border)
+                        .when(!narrow, |sheet| {
+                            sheet
+                                .max_w(px(900.))
+                                .max_h(px(620.))
+                                .rounded(px(Theme::panel_radius()))
+                                .border_1()
+                                .border_color(theme.border)
+                        })
                         .relative()
                         .on_click(|_, _, cx| cx.stop_propagation())
                         .child(sheet)
@@ -1516,8 +1521,8 @@ impl Cydonia {
     }
 
     #[cfg(feature = "desktop")]
-    fn settings_sheet(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let _ = cx;
+    fn settings_sheet(&self, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let _ = (window, cx);
         None
     }
 
@@ -1726,7 +1731,7 @@ impl Render for Cydonia {
             // is answerable while it is asking.
             .children(self.confirm_delete(cx))
             .children(self.search_palette(cx))
-            .children(self.settings_sheet(cx))
+            .children(self.settings_sheet(window, cx))
             .children(self.desktop_only_notice(cx))
             .children(self.new_board_dialog(cx));
         bezel::ui::window::frame(root, window, cx)

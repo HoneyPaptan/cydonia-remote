@@ -712,6 +712,12 @@ impl Render for Panel {
                                 false => tabs::State::Resting,
                             };
                             let key = gpui::SharedString::from(format!("panel-{id}"));
+                            // A touch screen has no hover to bring the close
+                            // button up with.
+                            let close = match alone {
+                                true => tabs::Close::Always,
+                                false => tabs::Close::OnHover,
+                            };
                             tabs::tab(&theme, key.clone(), label, state)
                                 .tooltip(move |window, cx| Tooltip::text(path.clone(), window, cx))
                                 .on_click(cx.listener(move |this, _, window, cx| {
@@ -722,7 +728,7 @@ impl Render for Panel {
                                     this.focus(window, cx);
                                     cx.notify();
                                 }))
-                                .child(tabs::close(&theme, key, tabs::Close::OnHover).on_click(
+                                .child(tabs::close(&theme, key, close).on_click(
                                     cx.listener(move |this, _, window, cx| {
                                         cx.stop_propagation();
                                         this.close(id, window, cx);
