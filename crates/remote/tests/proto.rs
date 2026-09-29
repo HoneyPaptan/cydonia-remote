@@ -1,7 +1,7 @@
 mod common;
 
 use common::{file, key};
-use cydonia_remote::proto::{Action, Change, Command, Frame, SessionHeader, Status};
+use cydonia_remote::proto::{Action, Change, Command, Event, Frame, SessionHeader, Status};
 use serde_json::json;
 
 #[test]
@@ -84,4 +84,22 @@ fn a_header_without_switches_still_reads() {
     let header: SessionHeader = serde_json::from_value(value).unwrap();
     assert!(header.config.is_empty());
     assert_eq!(header.modes, None);
+}
+
+#[test]
+fn a_header_change_with_send_times_reads_back_as_a_frame() {
+    let mut header = common::header(Status::Idle);
+    header.sent_at.insert(0, 1_790_639_505);
+    header.sent_at.insert(4, 1_790_640_052);
+    let frame = Frame::Event {
+        event: Box::new(Event {
+            seq: 27,
+            change: Change::SessionHeader {
+                key: key("/project", "record"),
+                header,
+            },
+        }),
+    };
+    let wire = serde_json::to_string(&frame).unwrap();
+    assert_eq!(serde_json::from_str::<Frame>(&wire).unwrap(), frame);
 }

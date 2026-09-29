@@ -155,9 +155,8 @@ impl Endpoint {
             let Some(body) = event.data().as_string() else {
                 return;
             };
-            if let Ok(frame) = serde_json::from_str::<Frame>(&body) {
-                let _ = frames.unbounded_send(Inbound::Frame(frame));
-            }
+            let frame = serde_json::from_str::<Frame>(&body).unwrap_or(Frame::Resync);
+            let _ = frames.unbounded_send(Inbound::Frame(frame));
         });
         let close = Closure::<dyn FnMut(CloseEvent)>::new(move |_: CloseEvent| {
             let _ = inbound.unbounded_send(Inbound::Closed);

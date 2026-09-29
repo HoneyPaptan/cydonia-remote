@@ -3,7 +3,7 @@ use artifact::session::{
     record::ForkOrigin,
 };
 use cacp::schema::{SessionConfigOption, SessionModeState};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use std::collections::BTreeMap;
 
 pub const VERSION: u32 = 1;
@@ -60,6 +60,7 @@ pub struct SessionHeader {
     pub status: Status,
     pub closed: bool,
     pub fork: Option<ForkOrigin>,
+    #[serde(deserialize_with = "indexed")]
     pub sent_at: BTreeMap<usize, u64>,
     pub plan: Vec<(String, PlanStatus)>,
     pub permission: Option<PermissionView>,
@@ -69,6 +70,13 @@ pub struct SessionHeader {
     pub config: Vec<SessionConfigOption>,
     #[serde(default)]
     pub modes: Option<SessionModeState>,
+}
+
+fn indexed<'de, D: Deserializer<'de>>(from: D) -> Result<BTreeMap<usize, u64>, D::Error> {
+    BTreeMap::<String, u64>::deserialize(from)?
+        .into_iter()
+        .map(|(index, at)| index.parse().map(|index| (index, at)).map_err(D::Error::custom))
+        .collect()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
