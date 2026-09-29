@@ -1,7 +1,7 @@
 use artifact::{project::memory, session::record::Record};
 use gui::model::{
     settings::{Agent, Settings},
-    state::State,
+    state::{self, State},
     store,
 };
 use remote::proto::{ProjectView, SessionView, Snapshot};
@@ -78,12 +78,10 @@ pub fn settings(snapshot: &Snapshot) -> Settings {
 }
 
 pub fn state(snapshot: &Snapshot) -> State {
-    State {
-        projects: snapshot
-            .projects
-            .iter()
-            .map(|project| project.path.clone().into())
-            .collect(),
-        ..State::default()
-    }
+    let projects = snapshot
+        .projects
+        .iter()
+        .map(|project| project.path.clone().into())
+        .collect();
+    state::reconcile(state::kept().unwrap_or_default(), projects)
 }

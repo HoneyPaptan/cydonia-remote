@@ -1,5 +1,5 @@
 use crate::{
-    apply, fonts,
+    apply, fonts, keeper,
     net::{self, Endpoint, Inbound},
     seed,
 };
@@ -45,26 +45,23 @@ const FIRST_WAIT: i32 = 500;
 const LAST_WAIT: i32 = 10_000;
 const HEARTBEAT_CHECK: i32 = 5_000;
 const SILENCE_LIMIT: f64 = 25_000.0;
+const REMEMBER_EVERY: f64 = 30_000.0;
 
 thread_local! {
     static APPLICATION: RefCell<Option<ApplicationHandle>> = const { RefCell::new(None) };
     static WINDOW: RefCell<Option<WindowHandle<Cydonia>>> = const { RefCell::new(None) };
 }
 
-fn show(text: &str) {
-    if let Some(boot) = web_sys::window()
-        .and_then(|window| window.document())
-        .and_then(|document| document.get_element_by_id("boot"))
-    {
-        boot.set_text_content(Some(&format!("Cydonia did not start: {text}")));
-    }
+fn element(id: &str) -> Option<web_sys::Element> {
+    web_sys::window()?.document()?.get_element_by_id(id)
 }
 
-fn hide_boot() {
-    if let Some(boot) = web_sys::window()
-        .and_then(|window| window.document())
-        .and_then(|document| document.get_element_by_id("boot"))
-    {
+fn show(text: &str) {
+    if let Some(failure) = element("failure") {
+        failure.set_text_content(Some(&format!("Cydonia did not start: {text}")));
+        let _ = failure.remove_attribute("hidden");
+    }
+    if let Some(boot) = element("boot") {
         boot.remove();
     }
 }
@@ -291,9 +288,23 @@ struct Client {
     seq: Cell<u64>,
     focus: Rc<Focus>,
     refocus: RefCell<UnboundedReceiver<()>>,
+    remembered: Cell<(f64, u64)>,
 }
 
 impl Client {
+    fn remember(&self) {
+        let (epoch, seq) = (self.epoch.get(), self.seq.get());
+        keeper::remember(&self.endpoint.base, &self.mirror.borrow().shell(epoch, seq));
+        self.remembered.set((net::now(), seq));
+    }
+
+    fn remember_if_stale(&self) {
+        let (at, seq) = self.remembered.get();
+        if self.seq.get() != seq && net::now() - at > REMEMBER_EVERY {
+            self.remember();
+        }
+    }
+
     fn order(&self, seq: u64) -> Order {
         let last = self.seq.get();
         match seq {
@@ -362,6 +373,7 @@ impl Client {
         for change in &changes {
             self.show(change, cx);
         }
+        self.remember();
         true
     }
 
@@ -412,7 +424,7 @@ impl Client {
             match woke {
                 Woke::Returned => return Ending::Returned,
                 Woke::Checked if net::now() - heard > SILENCE_LIMIT => return Ending::Lost,
-                Woke::Checked => {}
+                Woke::Checked => self.remember_if_stale(),
                 Woke::Refocus => socket.focus(&self.focus.current()),
                 Woke::Heard(None) | Woke::Heard(Some(Inbound::Closed)) => return Ending::Lost,
                 Woke::Heard(Some(Inbound::Opened)) => {
@@ -466,8 +478,7 @@ fn drain(returns: &mut UnboundedReceiver<()>) {
     while returns.try_recv().is_ok() {}
 }
 
-async fn boot() -> Result<(), String> {
-    let endpoint = Rc::new(Endpoint::from_location()?);
+async fn fresh_snapshot(endpoint: &Endpoint) -> Result<remote::proto::Snapshot, String> {
     let snapshot = endpoint.snapshot().await.map_err(|failure| failure.to_string())?;
     if snapshot.version != VERSION {
         return Err(format!(
@@ -475,6 +486,17 @@ async fn boot() -> Result<(), String> {
             snapshot.version
         ));
     }
+    keeper::remember(&endpoint.base, &snapshot);
+    Ok(snapshot)
+}
+
+async fn boot() -> Result<(), String> {
+    let endpoint = Rc::new(Endpoint::from_location()?);
+    keeper::install(&endpoint.base);
+    let snapshot = match keeper::cached(&endpoint.base).filter(|held| held.version == VERSION) {
+        Some(held) => held,
+        None => fresh_snapshot(&endpoint).await?,
+    };
     for project in &snapshot.projects {
         seed::project(project);
     }
@@ -541,13 +563,13 @@ async fn boot() -> Result<(), String> {
                 seq: Cell::new(seq),
                 focus,
                 refocus: RefCell::new(refocused),
+                remembered: Cell::new((net::now(), seq)),
             });
             let initial = client.mirror.borrow().clone();
             client.workspace.update(cx, |workspace, cx| {
                 apply::everything(workspace, &initial, cx)
             });
             cx.spawn(async move |cx| client.follow(cx).await).detach();
-            hide_boot();
         });
     APPLICATION.with(|application| *application.borrow_mut() = Some(handle));
     Ok(())

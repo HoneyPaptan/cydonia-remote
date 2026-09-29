@@ -27,7 +27,7 @@ toml.workspace = true
 web-time.workspace = true
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
-web-sys = { version = "0.3", features = ["CloseEvent", "Document", "Event", "Blob", "BlobPropertyBag", "Element", "EventTarget", "File", "FileList", "HtmlElement", "HtmlImageElement", "HtmlInputElement", "Headers", "Location", "MessageEvent", "Request", "RequestInit", "Response", "Url", "VisibilityState", "WebSocket", "Window"] }
+web-sys = { version = "0.3", features = ["CloseEvent", "Document", "Event", "Blob", "BlobPropertyBag", "Element", "EventTarget", "File", "FileList", "HtmlElement", "HtmlImageElement", "HtmlInputElement", "Headers", "Location", "MessageEvent", "Storage", "Request", "RequestInit", "Response", "Url", "VisibilityState", "WebSocket", "Window"] }
 
 [dependencies]
 artifact.workspace = true

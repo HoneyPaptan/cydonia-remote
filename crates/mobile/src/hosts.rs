@@ -8,6 +8,12 @@ thread_local! {
 
 pub fn linked(up: bool) {
     LINKED.set(up);
+    let body = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.body());
+    if let Some(body) = body {
+        let _ = body.set_attribute("data-linked", if up { "true" } else { "false" });
+    }
 }
 
 fn bridge() -> Option<JsValue> {
