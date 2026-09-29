@@ -1,4 +1,7 @@
-use crate::view::root::{Cydonia, ToggleChanges, narrow};
+use crate::view::{
+    leaf::Pane,
+    root::{Cydonia, ToggleChanges, narrow},
+};
 use bezel::{
     gpui::{
         self, Context, DispatchPhase, IntoElement, LongPressEvent, Modifiers, MouseButton,
@@ -232,12 +235,21 @@ impl Cydonia {
     fn start_swipe(&self, at: Point<Pixels>, across: f32, down: f32, window: &Window, cx: &gpui::App) -> Option<Swipe> {
         if across.abs() > down.abs() {
             let owned = !at_edge(at, window) && touch::scrolls_sideways_at(at, window, cx);
-            return (!owned && !self.quick).then_some(Swipe::Following(across));
+            let shut_out = across < 0. && self.keeps_the_right_panel_shut(cx);
+            return (!owned && !shut_out && !self.quick).then_some(Swipe::Following(across));
         }
         let height = f32::from(window.viewport_size().height);
         let lower_half = f32::from(at.y) > height / 2. && touch::pulls_at(at, window, cx);
         let from_bottom = (f32::from(at.y) > height - PULL_BAND || lower_half) && down < 0.;
         (from_bottom || (self.quick && down > 0.)).then_some(Swipe::Pulling(down))
+    }
+
+    fn keeps_the_right_panel_shut(&self, cx: &gpui::App) -> bool {
+        let document = matches!(
+            self.showing(cx),
+            Some(Pane::Article | Pane::Board | Pane::Table)
+        );
+        document && !self.sidebar_open
     }
 
     fn settle_swipe(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -281,7 +293,10 @@ impl Cydonia {
     fn swipe_left(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.sidebar_open {
             self.toggle_sidebar(cx);
-        } else if !self.changes_open && self.shell_cwd(cx).is_some() {
+        } else if !self.changes_open
+            && !self.keeps_the_right_panel_shut(cx)
+            && self.shell_cwd(cx).is_some()
+        {
             self.toggle_changes(&ToggleChanges, window, cx);
         }
     }

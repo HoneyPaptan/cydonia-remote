@@ -22,7 +22,7 @@ impl Drop for Scratch {
     }
 }
 
-fn open_phone(
+fn open_bare_phone(
     scratch: &Scratch,
     cx: &mut gpui::TestAppContext,
 ) -> (gpui::Entity<Cydonia>, gpui::VisualTestContext) {
@@ -36,6 +36,18 @@ fn open_phone(
     root.update(&mut visual, |root, cx| {
         root.workspace.update(cx, |workspace, cx| {
             workspace.open_project(path, cx);
+        });
+    });
+    (root, visual)
+}
+
+fn open_phone(
+    scratch: &Scratch,
+    cx: &mut gpui::TestAppContext,
+) -> (gpui::Entity<Cydonia>, gpui::VisualTestContext) {
+    let (root, mut visual) = open_bare_phone(scratch, cx);
+    root.update(&mut visual, |root, cx| {
+        root.workspace.update(cx, |workspace, cx| {
             workspace.new_article(cx);
         });
     });
@@ -96,11 +108,35 @@ fn swiping_right_opens_the_sidebar_and_left_closes_it(cx: &mut gpui::TestAppCont
 #[gpui::test]
 fn swiping_left_opens_the_right_panel_and_right_closes_it(cx: &mut gpui::TestAppContext) {
     let scratch = Scratch::new("panel");
-    let (root, mut visual) = open_phone(&scratch, cx);
+    let (root, mut visual) = open_bare_phone(&scratch, cx);
 
     pan(-200., 0., &mut visual);
     assert_eq!(open(&root, &mut visual), (false, true));
     pan(200., 0., &mut visual);
+    assert_eq!(open(&root, &mut visual), (false, false));
+}
+
+#[gpui::test]
+fn swiping_left_over_an_article_leaves_the_right_panel_shut(cx: &mut gpui::TestAppContext) {
+    let scratch = Scratch::new("panel-article");
+    let (root, mut visual) = open_phone(&scratch, cx);
+    root.update_in(&mut visual, |root, window, cx| root.open_article(0, 0, window, cx));
+
+    pan(-200., 0., &mut visual);
+    assert_eq!(open(&root, &mut visual), (false, false));
+    pan_from(point(px(385.), px(400.)), -200., 0., &mut visual);
+    assert_eq!(open(&root, &mut visual), (false, false));
+}
+
+#[gpui::test]
+fn swiping_left_over_an_article_still_closes_the_sidebar(cx: &mut gpui::TestAppContext) {
+    let scratch = Scratch::new("panel-article-drawer");
+    let (root, mut visual) = open_phone(&scratch, cx);
+    root.update_in(&mut visual, |root, window, cx| root.open_article(0, 0, window, cx));
+
+    pan(200., 0., &mut visual);
+    assert_eq!(open(&root, &mut visual), (true, false));
+    pan(-200., 0., &mut visual);
     assert_eq!(open(&root, &mut visual), (false, false));
 }
 
@@ -280,7 +316,7 @@ fn a_grip_under_the_drawer_or_the_panel_leaves_the_touch_to_them(cx: &mut gpui::
     root.update(&mut visual, |root, cx| root.toggle_sidebar(cx));
     assert_eq!(grips_found(&mut visual), vec![]);
     root.update(&mut visual, |root, cx| root.toggle_sidebar(cx));
-    pan(-200., 0., &mut visual);
+    root.update_in(&mut visual, |root, window, cx| root.toggle_changes(&ToggleChanges, window, cx));
     assert_eq!(open(&root, &mut visual), (false, true));
     focus_the_article(&root, &mut visual);
     assert_eq!(grips_found(&mut visual), vec![]);
