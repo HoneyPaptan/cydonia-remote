@@ -65,6 +65,8 @@ const COLUMN: &str = "Column";
 /// editor that had the caret is a different entity.
 pub struct Reloaded;
 
+pub struct Reread(pub PathBuf);
+
 /// The performance section's figures: what is in memory right now.
 pub struct Resident {
     pub projects: usize,
@@ -728,6 +730,8 @@ impl Workspace {
 }
 
 impl EventEmitter<Reloaded> for Workspace {}
+
+impl EventEmitter<Reread> for Workspace {}
 
 /// Point one session's entry at the file's copy of the agent it names.
 ///

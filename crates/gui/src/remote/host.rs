@@ -3,7 +3,7 @@ use crate::model::{
     project::Project,
     session::ChatSession,
     settings, switches,
-    workspace::{Reloaded, Workspace},
+    workspace::{Reloaded, Reread, Workspace},
 };
 use anyhow::Result;
 use artifact::{project::Project as _, session::chat::ChatItem};
@@ -19,7 +19,7 @@ use std::{
     cell::RefCell,
     collections::{BTreeMap, HashMap, HashSet},
     net::SocketAddr,
-    path::PathBuf,
+    path::{Path, PathBuf},
     rc::Rc,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -61,6 +61,10 @@ impl Publisher {
 
     fn reread(&mut self) {
         self.dirty.extend(self.files.keys().cloned());
+    }
+
+    fn reread_project(&mut self, path: &Path) {
+        self.dirty.insert(path.to_path_buf());
     }
 
     fn items(&mut self, project: &Project, chat: &ChatSession, record: &str) -> Vec<ChatItem> {
@@ -187,22 +191,7 @@ pub fn start(workspace: Entity<Workspace>, options: Options, cx: &mut App) -> Re
             }
         })?;
 
-    let publisher = Rc::new(RefCell::new(Publisher::new(hub)));
-    publisher.borrow_mut().publish(workspace.read(cx));
-
-    let observed = publisher.clone();
-    cx.observe(&workspace, move |workspace, cx| {
-        observed.borrow_mut().publish(workspace.read(cx));
-    })
-    .detach();
-
-    let reloaded = publisher.clone();
-    cx.subscribe(&workspace, move |workspace, _: &Reloaded, cx| {
-        let mut publisher = reloaded.borrow_mut();
-        publisher.reread();
-        publisher.publish(workspace.read(cx));
-    })
-    .detach();
+    follow_workspace(Publisher::new(hub), &workspace, cx);
 
     cx.spawn(async move |cx| {
         while let Some((action, reply)) = actions.next().await {
@@ -212,6 +201,32 @@ pub fn start(workspace: Entity<Workspace>, options: Options, cx: &mut App) -> Re
     })
     .detach();
     Ok(())
+}
+
+fn follow_workspace(publisher: Publisher, workspace: &Entity<Workspace>, cx: &mut App) {
+    let publisher = Rc::new(RefCell::new(publisher));
+    publisher.borrow_mut().publish(workspace.read(cx));
+
+    let observed = publisher.clone();
+    cx.observe(workspace, move |workspace, cx| {
+        observed.borrow_mut().publish(workspace.read(cx));
+    })
+    .detach();
+
+    let reloaded = publisher.clone();
+    cx.subscribe(workspace, move |workspace, _: &Reloaded, cx| {
+        let mut publisher = reloaded.borrow_mut();
+        publisher.reread();
+        publisher.publish(workspace.read(cx));
+    })
+    .detach();
+
+    cx.subscribe(workspace, move |workspace, Reread(path), cx| {
+        let mut publisher = publisher.borrow_mut();
+        publisher.reread_project(path);
+        publisher.publish(workspace.read(cx));
+    })
+    .detach();
 }
 
 #[cfg(test)]

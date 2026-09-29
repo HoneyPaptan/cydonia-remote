@@ -358,6 +358,7 @@ impl Workspace {
         if self.projects[ix].reload(cx) {
             cx.emit(Reloaded);
         }
+        cx.emit(Reread(path.to_path_buf()));
         self.prune_archived(cx);
         // An entry deleted from under a space leaves a member naming a
         // number nothing answers to.
@@ -376,6 +377,7 @@ impl Workspace {
         let mut moved = false;
         for ix in 0..self.projects.len() {
             moved |= self.projects[ix].reload(cx);
+            cx.emit(Reread(self.projects[ix].path.clone()));
         }
         if moved {
             cx.emit(Reloaded);

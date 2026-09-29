@@ -355,3 +355,37 @@ fn every_written_id_must_be_a_plain_name_even_where_the_disk_would_refuse_it() {
         assert!(error.contains("is not a plain name"), "{id:?}: {error}");
     }
 }
+
+#[gpui::test]
+fn an_article_written_outside_the_app_reaches_the_mirror_on_the_next_reread(
+    cx: &mut gpui::TestAppContext,
+) {
+    use crate::model::{settings::Settings, state};
+    use artifact::project::fs;
+    use gpui::AppContext as _;
+    cx.update(|cx| bezel::theme::Theme::install(bezel::theme::Appearance::Light, cx));
+    let dir = std::env::temp_dir().join(format!(
+        "cydonia-remote-outside-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join(".cydonia/sessions")).unwrap();
+    let hub = Hub::new(1);
+    let workspace = cx.new(|cx| Workspace::new(Settings::default(), state::State::default(), cx));
+    workspace.update(cx, |workspace, cx| workspace.open_project(dir.clone(), cx));
+    cx.update(|cx| follow_workspace(Publisher::new(hub.clone()), &workspace, cx));
+    let files = |hub: &Hub| hub.mirror().projects[0].files.clone();
+    assert!(files(&hub).is_empty());
+
+    let article = fs::Project::new(&dir)
+        .create_article_as("1790670250506", "written by an agent")
+        .unwrap();
+    workspace.update(cx, |workspace, cx| workspace.reload_project(&dir, cx));
+
+    let content = format!("articles/{}/content.md", article.id);
+    assert_eq!(
+        files(&hub).get(&content).map(|file| file.0.clone()),
+        Some(b"written by an agent".to_vec())
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
