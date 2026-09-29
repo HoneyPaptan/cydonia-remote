@@ -334,12 +334,17 @@ pub enum Shape {
     /// Wraps and grows with the content between `min` and `max` rows, then
     /// scrolls — the composer shape.
     Grow { min: usize, max: usize },
+    Wrap { max: usize },
 }
 
 impl Shape {
     /// Whether newlines are content. The single branch every editing policy
     /// hangs off, so it is asked once rather than matched in each caller.
     fn is_multiline(self) -> bool {
+        matches!(self, Self::Rows(_) | Self::Grow { .. })
+    }
+
+    fn wraps(self) -> bool {
         !matches!(self, Self::Line)
     }
 }

@@ -363,6 +363,7 @@ impl Element for TextFieldElement {
             // the width layout is still deciding — which is exactly what a
             // measured layout is for.
             Shape::Grow { min, max } => (min.max(1), max.max(min.max(1))),
+            Shape::Wrap { max } => (1, max.max(1)),
         };
 
         let text = display_text(field).0;
@@ -464,7 +465,7 @@ impl Element for TextFieldElement {
         let line_height = field.line_height();
         // A single line never wraps: it scrolls sideways instead, so shaping it
         // against the field's width would fold it into rows nothing can reach.
-        let wrap_width = shape.is_multiline().then_some(bounds.size.width);
+        let wrap_width = shape.wraps().then_some(bounds.size.width);
         let lines = window
             .text_system()
             .shape_text(text, font_size, &runs, wrap_width, None)

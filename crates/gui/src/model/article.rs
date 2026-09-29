@@ -40,6 +40,8 @@ pub const UNNAMED: &str = "Untitled";
 /// newline in every other field.
 pub const TITLE_CONTEXT: &str = "CydoniaArticleTitle";
 
+const TITLE_ROWS: usize = 6;
+
 pub struct Article {
     pub number: Option<u64>,
     /// What the project's backend names it by.
@@ -194,9 +196,7 @@ impl Article {
         let field = cx.new(|cx| {
             let mut field = TextField::new(cx)
                 .with_frame(false)
-                // One line, because a title is: a pasted newline folds to a
-                // space.
-                .with_shape(Shape::Line)
+                .with_shape(Shape::Wrap { max: TITLE_ROWS })
                 .with_key_context(TITLE_CONTEXT)
                 .with_placeholder(UNNAMED)
                 .with_metrics(h1);

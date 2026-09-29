@@ -234,3 +234,22 @@ fn taps_keep_working_after_a_tap_on_the_drawer_corner(cx: &mut gpui::TestAppCont
     touch_tap("article-row-0-0", 2, visual);
     assert!(!root.read_with(visual, |root, _| root.sidebar_open), "the row still answers");
 }
+
+#[gpui::test]
+fn a_long_title_on_a_phone_wraps_instead_of_running_off(cx: &mut gpui::TestAppContext) {
+    const LONG: &str = "Dizzaract OS, what lives in this folder and why it is there";
+    let scratch = Scratch::new("long-title");
+    let (root, visual) = open_at_width(390., &scratch, cx);
+    root.update_in(visual, |root, window, cx| root.open_article(0, 0, window, cx));
+    let field = root.read_with(visual, |root, cx| root.pane_doc(cx).and_then(|article| article.field.clone()));
+    let field = field.expect("the open article has a title field");
+    field.update(visual, |field, cx| field.set_content(LONG, cx));
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+
+    field.read_with(visual, |field, _| {
+        let first = field.offset_bounds(0).expect("the title is laid out");
+        let last = field.offset_bounds(LONG.len()).expect("the title is laid out");
+        assert!(last.origin.y > first.origin.y, "the end of the title sits on a lower row");
+        assert!(last.origin.x < px(390.), "no row runs past the screen");
+    });
+}
