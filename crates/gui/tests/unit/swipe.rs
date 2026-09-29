@@ -137,6 +137,33 @@ fn swiping_up_from_the_bottom_opens_quick_actions_and_down_closes_them(
 }
 
 #[gpui::test]
+fn swiping_up_from_the_lower_half_of_a_settled_transcript_opens_quick_actions(
+    cx: &mut gpui::TestAppContext,
+) {
+    let scratch = Scratch::new("quick-transcript");
+    let (root, mut visual) = open_phone(&scratch, cx);
+
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    bezel::ui::touch::mark_pull(gpui::Bounds::new(point(px(0.), px(100.)), size(px(390.), px(600.))));
+    let at = point(px(200.), px(450.));
+    let step = |touch_phase, y: f32| {
+        PlatformInput::ScrollWheel(gpui::ScrollWheelEvent {
+            position: at,
+            delta: ScrollDelta::Pixels(point(px(0.), px(y))),
+            modifiers: gpui::Modifiers::default(),
+            touch_phase,
+        })
+    };
+    visual.update(|window, cx| {
+        window.dispatch_event(step(TouchPhase::Started, -8.), cx);
+        window.dispatch_event(step(TouchPhase::Moved, -8.), cx);
+        window.dispatch_event(step(TouchPhase::Moved, -10.), cx);
+        window.dispatch_event(step(TouchPhase::Ended, 0.), cx);
+    });
+    assert!(root.read_with(&visual, |root, _| root.quick));
+}
+
+#[gpui::test]
 fn swiping_up_from_the_middle_leaves_quick_actions_closed(cx: &mut gpui::TestAppContext) {
     let scratch = Scratch::new("quick-middle");
     let (root, mut visual) = open_phone(&scratch, cx);

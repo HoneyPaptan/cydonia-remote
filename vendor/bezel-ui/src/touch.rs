@@ -8,6 +8,7 @@ const GRIP_REACH: f32 = 12.;
 enum Kind {
     Sideways,
     Grip,
+    Pull,
 }
 
 thread_local! {
@@ -25,6 +26,14 @@ pub fn sideways() -> impl IntoElement {
 pub fn grip() -> impl IntoElement {
     let reach = px(-GRIP_REACH);
     mark(Kind::Grip).top(reach).left(reach).right(reach).bottom(reach)
+}
+
+pub fn mark_pull(bounds: Bounds<Pixels>) {
+    REGIONS.with_borrow_mut(|regions| regions.push((Kind::Pull, bounds)));
+}
+
+pub fn pulls_at(position: Point<Pixels>) -> bool {
+    found(Kind::Pull, position).is_some()
 }
 
 pub fn scrolls_sideways_at(position: Point<Pixels>) -> bool {

@@ -1,4 +1,7 @@
-use bezel::gpui::{Div, FollowMode, IntoElement, ListState, canvas, prelude::*, px};
+use bezel::{
+    gpui::{Div, FollowMode, IntoElement, ListState, canvas, prelude::*, px},
+    ui::touch,
+};
 
 /// Upward input releases following even inside GPUI's one-pixel bottom tolerance.
 pub(super) fn viewport(state: &ListState, content: Div) -> impl IntoElement {
@@ -16,7 +19,10 @@ pub(super) fn viewport(state: &ListState, content: Div) -> impl IntoElement {
         })
         .child(
             canvas(
-                move |_, window, _| {
+                move |bounds, window, _| {
+                    if at_end(&drag) {
+                        touch::mark_pull(bounds.intersect(&window.content_mask().bounds));
+                    }
                     if drag.is_scrollbar_dragging() && at_end(&drag) && !drag.is_following_tail() {
                         drag.set_follow_mode(FollowMode::Tail);
                         window.refresh();

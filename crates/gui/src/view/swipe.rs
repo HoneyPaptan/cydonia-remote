@@ -11,7 +11,9 @@ use bezel::{
 const SWIPE_DISTANCE: f32 = 40.;
 const FLICK_DISTANCE: f32 = 16.;
 const EDGE: f32 = 24.;
-const PULL_BAND: f32 = 96.;
+const PULL_BAND: f32 = 160.;
+const PULL_DISTANCE: f32 = 24.;
+const PULL_FLICK: f32 = 10.;
 const LIFT_DISTANCE: f32 = 8.;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -216,7 +218,7 @@ impl Cydonia {
                     Swipe::Following(far) if far.abs() >= FLICK_DISTANCE => {
                         self.turn(far, window, cx)
                     }
-                    Swipe::Pulling(far) if far.abs() >= FLICK_DISTANCE => self.pull(far, cx),
+                    Swipe::Pulling(far) if far.abs() >= PULL_FLICK => self.pull(far, cx),
                     _ => {}
                 }
                 return true;
@@ -232,8 +234,9 @@ impl Cydonia {
             let owned = !at_edge(at, window) && touch::scrolls_sideways_at(at);
             return (!owned && !self.quick).then_some(Swipe::Following(across));
         }
-        let floor = f32::from(window.viewport_size().height) - PULL_BAND;
-        let from_bottom = f32::from(at.y) > floor && down < 0.;
+        let height = f32::from(window.viewport_size().height);
+        let lower_half = f32::from(at.y) > height / 2. && touch::pulls_at(at);
+        let from_bottom = (f32::from(at.y) > height - PULL_BAND || lower_half) && down < 0.;
         (from_bottom || (self.quick && down > 0.)).then_some(Swipe::Pulling(down))
     }
 
@@ -243,7 +246,7 @@ impl Cydonia {
                 self.swipe = Some(Swipe::Spent);
                 self.turn(far, window, cx);
             }
-            Some(Swipe::Pulling(far)) if far.abs() >= SWIPE_DISTANCE => {
+            Some(Swipe::Pulling(far)) if far.abs() >= PULL_DISTANCE => {
                 self.swipe = Some(Swipe::Spent);
                 self.pull(far, cx);
             }
