@@ -6,7 +6,7 @@ use crate::{
 use bezel::gpui::{App, Application, ApplicationHandle, AsyncApp, Entity, WindowHandle};
 use futures::{
     FutureExt as _, StreamExt as _,
-    channel::mpsc::{self, UnboundedReceiver},
+    channel::mpsc::{self, UnboundedReceiver, UnboundedSender},
     select,
 };
 use gui::{
@@ -19,7 +19,10 @@ use gui::{
 };
 use remote::{
     mirror::Mirror,
-    proto::{Action, Command, Event, File, Frame, Outcome, SessionKey, Upload, VERSION},
+    proto::{
+        Action, Change, Command, Event, File, Frame, Outcome, SessionKey, SessionView, Upload,
+        VERSION,
+    },
 };
 use std::{
     borrow::Cow,
@@ -40,7 +43,8 @@ const FONTS: [&[u8]; 5] = [
 
 const FIRST_WAIT: i32 = 500;
 const LAST_WAIT: i32 = 10_000;
-const ATTEMPTS: usize = 6;
+const HEARTBEAT_CHECK: i32 = 5_000;
+const SILENCE_LIMIT: f64 = 25_000.0;
 
 thread_local! {
     static APPLICATION: RefCell<Option<ApplicationHandle>> = const { RefCell::new(None) };
@@ -66,9 +70,7 @@ fn hide_boot() {
 }
 
 struct Commands {
-    endpoint: Rc<Endpoint>,
-    opening: Rc<Opening>,
-    app: AsyncApp,
+    outbox: UnboundedSender<Command>,
 }
 
 struct Opening {
@@ -107,27 +109,41 @@ fn key(project: &Path, record: &str) -> SessionKey {
 
 impl Commands {
     fn deliver(&self, action: Action) {
-        let endpoint = self.endpoint.clone();
-        let opening = self.opening.clone();
-        let mut cx = self.app.clone();
-        let command = Command {
+        let _ = self.outbox.unbounded_send(Command {
             id: net::fresh_id(),
             action,
-        };
-        wasm_bindgen_futures::spawn_local(async move {
-            let mut wait = FIRST_WAIT;
-            for _ in 0..ATTEMPTS {
-                if let Ok(ack) = endpoint.command(&command).await {
-                    if let Outcome::Created { key } = ack.outcome {
-                        opening.want(key);
-                        opening.settle(&mut cx);
-                    }
-                    return;
+        });
+    }
+}
+
+async fn settle(endpoint: &Endpoint, command: &Command, opening: &Opening, cx: &mut AsyncApp) {
+    let mut wait = FIRST_WAIT;
+    loop {
+        match endpoint.command(command).await {
+            Ok(ack) => {
+                if let Outcome::Created { key } = ack.outcome {
+                    opening.want(key);
+                    opening.settle(cx);
                 }
+                return;
+            }
+            Err(failure) if failure.retryable() => {
                 net::sleep(wait).await;
                 wait = (wait * 2).min(LAST_WAIT);
             }
-        });
+            Err(_) => return,
+        }
+    }
+}
+
+async fn send_in_order(
+    endpoint: Rc<Endpoint>,
+    opening: Rc<Opening>,
+    mut cx: AsyncApp,
+    mut outbox: UnboundedReceiver<Command>,
+) {
+    while let Some(command) = outbox.next().await {
+        settle(&endpoint, &command, &opening, &mut cx).await;
     }
 }
 
@@ -226,6 +242,46 @@ impl Sink for Commands {
     }
 }
 
+struct Focus {
+    keys: RefCell<Vec<SessionKey>>,
+    wake: UnboundedSender<()>,
+}
+
+impl Focus {
+    fn follow(&self, keys: Vec<SessionKey>) {
+        if *self.keys.borrow() == keys {
+            return;
+        }
+        *self.keys.borrow_mut() = keys;
+        let _ = self.wake.unbounded_send(());
+    }
+
+    fn current(&self) -> Vec<SessionKey> {
+        self.keys.borrow().clone()
+    }
+}
+
+fn watched(workspace: &Workspace) -> Vec<SessionKey> {
+    workspace
+        .active_session()
+        .and_then(|chat| Some(key(&chat.cwd, chat.record.as_deref()?)))
+        .into_iter()
+        .collect()
+}
+
+enum Order {
+    Old,
+    Next,
+    Gap,
+}
+
+enum Woke {
+    Heard(Option<Inbound>),
+    Returned,
+    Checked,
+    Refocus,
+}
+
 struct Client {
     endpoint: Rc<Endpoint>,
     opening: Rc<Opening>,
@@ -233,25 +289,65 @@ struct Client {
     mirror: RefCell<Mirror>,
     epoch: Cell<u64>,
     seq: Cell<u64>,
+    focus: Rc<Focus>,
+    refocus: RefCell<UnboundedReceiver<()>>,
 }
 
 impl Client {
-    fn take(&self, event: Event, cx: &mut AsyncApp) -> bool {
+    fn order(&self, seq: u64) -> Order {
         let last = self.seq.get();
-        if event.seq <= last {
-            return true;
+        match seq {
+            seq if seq <= last => Order::Old,
+            seq if seq == last + 1 => Order::Next,
+            _ => Order::Gap,
         }
-        if event.seq != last + 1 {
-            return false;
-        }
-        self.mirror.borrow_mut().apply(&event.change);
-        self.seq.set(event.seq);
+    }
+
+    fn show(&self, change: &Change, cx: &mut AsyncApp) {
+        self.mirror.borrow_mut().apply(change);
         let mirror = self.mirror.borrow();
-        self.workspace.update(cx, |workspace, cx| {
-            apply::change(workspace, &mirror, &event.change, cx)
-        });
+        self.workspace
+            .update(cx, |workspace, cx| apply::change(workspace, &mirror, change, cx));
         self.opening.settle(cx);
-        true
+    }
+
+    fn take(&self, event: Event, cx: &mut AsyncApp) -> bool {
+        match self.order(event.seq) {
+            Order::Old => true,
+            Order::Gap => false,
+            Order::Next => {
+                self.seq.set(event.seq);
+                self.show(&event.change, cx);
+                true
+            }
+        }
+    }
+
+    fn skip(&self, seq: u64) -> bool {
+        match self.order(seq) {
+            Order::Old => true,
+            Order::Gap => false,
+            Order::Next => {
+                self.seq.set(seq);
+                true
+            }
+        }
+    }
+
+    fn adopt_session(&self, key: SessionKey, session: SessionView, cx: &mut AsyncApp) {
+        self.show(&Change::SessionPut { key, session }, cx);
+    }
+
+    fn carry_focused_items(&self, next: &mut Mirror) {
+        let held = self.mirror.borrow();
+        for key in self.focus.current() {
+            let Some(items) = held.session(&key).map(|session| session.items.clone()) else {
+                continue;
+            };
+            if let Some(session) = next.session_mut(&key) {
+                session.items = items;
+            }
+        }
     }
 
     async fn resync(&self, cx: &mut AsyncApp) -> bool {
@@ -260,12 +356,12 @@ impl Client {
         };
         self.epoch.set(snapshot.epoch);
         self.seq.set(snapshot.seq);
-        *self.mirror.borrow_mut() = Mirror::from_snapshot(snapshot);
-        let mirror = self.mirror.borrow();
-        self.workspace.update(cx, |workspace, cx| {
-            apply::everything(workspace, &mirror, cx)
-        });
-        self.opening.settle(cx);
+        let mut next = Mirror::from_snapshot(snapshot);
+        self.carry_focused_items(&mut next);
+        let changes = self.mirror.borrow().diff(&next);
+        for change in &changes {
+            self.show(change, cx);
+        }
         true
     }
 
@@ -277,6 +373,19 @@ impl Client {
         }
     }
 
+    fn handle(&self, frame: Frame, cx: &mut AsyncApp) -> bool {
+        match frame {
+            Frame::Event { event } => self.take(*event, cx),
+            Frame::Quiet { seq } => self.skip(seq),
+            Frame::Session { key, session, .. } => {
+                self.adopt_session(key, *session, cx);
+                true
+            }
+            Frame::Ping => true,
+            Frame::Resync => false,
+        }
+    }
+
     async fn listen(
         &self,
         returns: &mut UnboundedReceiver<()>,
@@ -284,27 +393,40 @@ impl Client {
         cx: &mut AsyncApp,
     ) -> Ending {
         let (sender, mut inbound) = mpsc::unbounded();
-        let Ok(_socket) = self
+        let Ok(socket) = self
             .endpoint
             .subscribe(self.epoch.get(), self.seq.get(), sender)
         else {
             return Ending::Lost;
         };
-        crate::hosts::linked(true);
+        let (_ticker, mut checks) = net::ticks(HEARTBEAT_CHECK);
+        let mut refocus = self.refocus.borrow_mut();
+        let mut heard = net::now();
         loop {
-            let message = select! {
-                message = inbound.next() => message,
-                _ = returns.next() => return Ending::Returned,
+            let woke = select! {
+                message = inbound.next() => Woke::Heard(message),
+                _ = returns.next() => Woke::Returned,
+                _ = checks.next() => Woke::Checked,
+                _ = refocus.next() => Woke::Refocus,
             };
-            match message {
-                Some(Inbound::Frame(Frame::Event { event })) => {
+            match woke {
+                Woke::Returned => return Ending::Returned,
+                Woke::Checked if net::now() - heard > SILENCE_LIMIT => return Ending::Lost,
+                Woke::Checked => {}
+                Woke::Refocus => socket.focus(&self.focus.current()),
+                Woke::Heard(None) | Woke::Heard(Some(Inbound::Closed)) => return Ending::Lost,
+                Woke::Heard(Some(Inbound::Opened)) => {
+                    heard = net::now();
+                    crate::hosts::linked(true);
+                    socket.focus(&self.focus.current());
+                }
+                Woke::Heard(Some(Inbound::Frame(frame))) => {
+                    heard = net::now();
                     *wait = FIRST_WAIT;
-                    if !self.take(*event, cx) {
+                    if !self.handle(frame, cx) {
                         return self.resync_ending(cx).await;
                     }
                 }
-                Some(Inbound::Frame(Frame::Resync)) => return self.resync_ending(cx).await,
-                Some(Inbound::Closed) | None => return Ending::Lost,
             }
         }
     }
@@ -346,7 +468,7 @@ fn drain(returns: &mut UnboundedReceiver<()>) {
 
 async fn boot() -> Result<(), String> {
     let endpoint = Rc::new(Endpoint::from_location()?);
-    let snapshot = endpoint.snapshot().await?;
+    let snapshot = endpoint.snapshot().await.map_err(|failure| failure.to_string())?;
     if snapshot.version != VERSION {
         return Err(format!(
             "the laptop speaks protocol {} and this app speaks {VERSION}",
@@ -391,11 +513,25 @@ async fn boot() -> Result<(), String> {
             crate::hosts::install();
             crate::pick::install();
             crate::pictures::install();
-            gui::model::sink::install(Rc::new(Commands {
-                endpoint: endpoint.clone(),
-                opening: opening.clone(),
-                app: cx.to_async(),
-            }));
+            let (outbox, queued) = mpsc::unbounded();
+            gui::model::sink::install(Rc::new(Commands { outbox }));
+            let sender = cx.to_async();
+            wasm_bindgen_futures::spawn_local(send_in_order(
+                endpoint.clone(),
+                opening.clone(),
+                sender,
+                queued,
+            ));
+            let (refocus, refocused) = mpsc::unbounded();
+            let focus = Rc::new(Focus {
+                keys: RefCell::new(Vec::new()),
+                wake: refocus,
+            });
+            let watching = focus.clone();
+            cx.observe(&workspace, move |workspace, cx| {
+                watching.follow(watched(workspace.read(cx)))
+            })
+            .detach();
             let client = Rc::new(Client {
                 endpoint,
                 opening,
@@ -403,6 +539,8 @@ async fn boot() -> Result<(), String> {
                 mirror: RefCell::new(mirror),
                 epoch: Cell::new(epoch),
                 seq: Cell::new(seq),
+                focus,
+                refocus: RefCell::new(refocused),
             });
             let initial = client.mirror.borrow().clone();
             client.workspace.update(cx, |workspace, cx| {

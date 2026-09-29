@@ -1,7 +1,7 @@
 use crate::{
     log::{Log, Replay},
     mirror::Mirror,
-    proto::{Event, Snapshot},
+    proto::{Event, SessionKey, SessionView, Snapshot},
 };
 use std::sync::{Arc, Mutex, MutexGuard};
 use tokio::sync::broadcast;
@@ -63,6 +63,19 @@ impl Hub {
     pub fn snapshot(&self) -> Snapshot {
         let state = self.state();
         state.mirror.snapshot(state.log.epoch(), state.log.seq())
+    }
+
+    pub fn shell_snapshot(&self) -> Snapshot {
+        let state = self.state();
+        state.mirror.shell(state.log.epoch(), state.log.seq())
+    }
+
+    pub fn session_at(&self, key: &SessionKey) -> Option<(SessionView, u64)> {
+        let state = self.state();
+        state
+            .mirror
+            .session(key)
+            .map(|session| (session.clone(), state.log.seq()))
     }
 
     pub fn subscribe(&self, epoch: u64, seq: u64) -> Subscription {

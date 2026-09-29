@@ -4,7 +4,7 @@ use artifact::session::{
 };
 use cacp::schema::{SessionConfigOption, SessionModeState};
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 pub const VERSION: u32 = 1;
 
@@ -28,11 +28,23 @@ pub struct Setup {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ProjectView {
     pub path: String,
-    pub files: BTreeMap<String, File>,
+    pub files: Arc<BTreeMap<String, File>>,
     pub sessions: BTreeMap<String, SessionView>,
 }
 
 impl ProjectView {
+    pub fn without_items(&self) -> Self {
+        Self {
+            path: self.path.clone(),
+            files: self.files.clone(),
+            sessions: self
+                .sessions
+                .iter()
+                .map(|(record, session)| (record.clone(), session.without_items()))
+                .collect(),
+        }
+    }
+
     pub fn new(path: impl Into<String>) -> Self {
         Self {
             path: path.into(),
@@ -48,6 +60,15 @@ pub struct File(#[serde(with = "crate::bytes")] pub Vec<u8>);
 pub struct SessionView {
     pub header: SessionHeader,
     pub items: Vec<ChatItem>,
+}
+
+impl SessionView {
+    pub fn without_items(&self) -> Self {
+        Self {
+            header: self.header.clone(),
+            items: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -164,6 +185,11 @@ pub enum Change {
         key: SessionKey,
         items: Vec<ChatItem>,
     },
+    ItemText {
+        key: SessionKey,
+        index: usize,
+        text: String,
+    },
     FilePut {
         project: String,
         path: String,
@@ -179,7 +205,16 @@ pub enum Change {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Frame {
     Event { event: Box<Event> },
+    Quiet { seq: u64 },
+    Session { key: SessionKey, seq: u64, session: Box<SessionView> },
+    Ping,
     Resync,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Upstream {
+    Focus { keys: Vec<SessionKey> },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

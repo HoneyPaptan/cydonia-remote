@@ -4,6 +4,7 @@ use std::{net::SocketAddr, path::PathBuf};
 
 const DEFAULT_LISTEN: &str = "127.0.0.1:7878";
 const TOKEN_FILE: &str = "remote-token";
+const RECEIPTS_FILE: &str = "remote-receipts.jsonl";
 
 pub fn options(args: &[String]) -> Result<Option<Options>> {
     if !args.iter().any(|arg| arg == "--remote") {
@@ -38,6 +39,13 @@ pub fn options(args: &[String]) -> Result<Option<Options>> {
     {
         bail!("{} has no index.html", dir.display());
     }
-    let token = gui::remote::token(&settings::dir()?.join(TOKEN_FILE))?;
-    Ok(Some(Options { listen, token, ui }))
+    let dir = settings::dir()?;
+    let token = gui::remote::token(&dir.join(TOKEN_FILE))?;
+    Ok(Some(Options {
+        listen,
+        token,
+        ui,
+        receipts: Some(dir.join(RECEIPTS_FILE)),
+        step_down: None,
+    }))
 }

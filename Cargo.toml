@@ -58,6 +58,13 @@ lto = "fat"
 codegen-units = 1
 strip = "symbols"
 
+[profile.daemon]
+inherits = "release"
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+strip = "none"
+
 
 [patch.crates-io]
 bezel-ui = { path = "vendor/bezel-ui" }

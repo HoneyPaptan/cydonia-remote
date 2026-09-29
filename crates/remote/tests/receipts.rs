@@ -41,3 +41,13 @@ fn oldest_ack_is_forgotten_past_capacity() {
     assert!(receipts.get("b").is_some());
     assert!(receipts.get("c").is_some());
 }
+
+#[test]
+fn a_journaled_ack_survives_a_restart() {
+    let path = std::env::temp_dir().join(format!("cydonia-receipts-{}.jsonl", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    Receipts::journaled(path.clone(), 4).keep(ack("cmd_1"));
+    let reopened = Receipts::journaled(path.clone(), 4);
+    assert_eq!(reopened.get("cmd_1"), Some(&ack("cmd_1")));
+    let _ = std::fs::remove_file(path);
+}

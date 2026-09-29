@@ -111,7 +111,7 @@ fn sessions(workspace: &mut Workspace, view: &ProjectView) {
     }
 }
 
-fn project(workspace: &mut Workspace, view: &ProjectView, cx: &mut Context<Workspace>) {
+fn reload(workspace: &mut Workspace, view: &ProjectView, cx: &mut Context<Workspace>) {
     seed::project(view);
     let path = PathBuf::from(&view.path);
     if workspace
@@ -123,6 +123,10 @@ fn project(workspace: &mut Workspace, view: &ProjectView, cx: &mut Context<Works
     } else {
         workspace.open_project(path, cx);
     }
+}
+
+fn project(workspace: &mut Workspace, view: &ProjectView, cx: &mut Context<Workspace>) {
+    reload(workspace, view, cx);
     sessions(workspace, view);
 }
 
@@ -188,7 +192,7 @@ pub fn change(
         Change::ProjectOrder { .. } => {}
         Change::FilePut { project: path, .. } | Change::FileRemoved { project: path, .. } => {
             if let Some(view) = mirror.project(path) {
-                project(workspace, view, cx);
+                reload(workspace, view, cx);
             }
         }
         Change::SessionPut { key, .. } | Change::SessionRemoved { key } => {
@@ -203,7 +207,8 @@ pub fn change(
         }
         Change::ItemsTruncate { key, .. }
         | Change::ItemReplace { key, .. }
-        | Change::ItemsAppend { key, .. } => {
+        | Change::ItemsAppend { key, .. }
+        | Change::ItemText { key, .. } => {
             let Some(chat) = chat_mut(workspace, key) else {
                 return;
             };

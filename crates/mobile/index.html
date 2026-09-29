@@ -161,15 +161,18 @@
 			);
 		</script>
 		<script type="module">
-			import init, { cydoniaBack } from './cydonia_mobile.js';
+			const version = '__VERSION__';
+			window.cydoniaVersion = version;
 
-			window.cydoniaBack = cydoniaBack;
-
-			init().catch((error) => {
+			try {
+				const { default: init, cydoniaBack } = await import(`./cydonia_mobile.js?v=${version}`);
+				window.cydoniaBack = cydoniaBack;
+				await init({ module_or_path: `./cydonia_mobile_bg.wasm?v=${version}` });
+			} catch (error) {
 				const boot = document.getElementById('boot');
 				if (boot && !boot.textContent.startsWith('Cydonia did not start'))
 					boot.textContent = `Cydonia did not start: ${error?.message ?? error}`;
-			});
+			}
 		</script>
 	</body>
 </html>

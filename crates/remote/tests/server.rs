@@ -59,6 +59,7 @@ async fn start_serving(ui: Option<std::path::PathBuf>) -> Running {
             token: TOKEN.into(),
             ui,
             local: None,
+            ..Config::default()
         },
         hub.clone(),
         dispatch,
@@ -157,6 +158,7 @@ async fn next_frame(socket: &mut Socket) -> Option<Frame> {
 async fn next_seq(socket: &mut Socket) -> u64 {
     match next_frame(socket).await {
         Some(Frame::Event { event }) => event.seq,
+        Some(Frame::Quiet { seq }) => seq,
         other => panic!("expected an event, got {other:?}"),
     }
 }
@@ -431,4 +433,71 @@ async fn a_precompressed_file_is_sent_to_clients_that_accept_gzip() {
     assert_eq!(plain.body, b"plain");
     assert_eq!(plain.header("content-encoding"), None);
     assert_ne!(plain.header("etag"), packed.header("etag"));
+}
+
+#[tokio::test]
+async fn a_focus_message_brings_the_transcript_of_that_session() {
+    use futures::SinkExt as _;
+    use tokio_tungstenite::tungstenite::Message;
+    let running = start().await;
+    running.hub.publish(mirror_with(vec![common::user("one"), common::agent("two")]));
+    let snapshot = snapshot(running.address).await;
+    let mut socket = subscribe(running.address, snapshot.epoch, snapshot.seq).await;
+    let focus = serde_json::json!({
+        "type": "focus",
+        "keys": [common::key("/p", "s")],
+    });
+    socket.send(Message::Text(focus.to_string().into())).await.unwrap();
+    match next_frame(&mut socket).await {
+        Some(Frame::Session { session, .. }) => assert_eq!(session.items.len(), 2),
+        other => panic!("expected the session, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn the_shell_snapshot_is_small_and_the_full_one_is_not() {
+    let running = start().await;
+    running.hub.publish(mirror_with(vec![common::user("one")]));
+    let shell = get(running.address, "/v1/snapshot?scope=shell", Some(TOKEN)).await.unwrap();
+    let full = get(running.address, "/v1/snapshot", Some(TOKEN)).await.unwrap();
+    let shell: Snapshot = serde_json::from_str(&shell).unwrap();
+    let full: Snapshot = serde_json::from_str(&full).unwrap();
+    assert!(shell.projects[0].sessions["s"].items.is_empty());
+    assert_eq!(full.projects[0].sessions["s"].items.len(), 1);
+}
+
+#[tokio::test]
+async fn a_handover_asks_the_host_to_step_down() {
+    let stepped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = stepped.clone();
+    let hub = Hub::new(1);
+    let (dispatch, _actions) = mpsc::unbounded();
+    let router = server::router(
+        Config {
+            token: TOKEN.into(),
+            step_down: Some(Arc::new(move || flag.store(true, Ordering::SeqCst))),
+            ..Config::default()
+        },
+        hub,
+        dispatch,
+    );
+    let listeners = server::bind(&["127.0.0.1:0".parse().unwrap()]).await.unwrap();
+    let address = listeners[0].local_addr().unwrap();
+    tokio::spawn(server::serve(listeners, router));
+    let refused = tokio::task::spawn_blocking(move || {
+        ureq::post(&format!("http://{address}/v1/handover")).send("")
+    })
+    .await
+    .unwrap();
+    assert!(matches!(refused, Err(ureq::Error::StatusCode(401))));
+    tokio::task::spawn_blocking(move || {
+        ureq::post(&format!("http://{address}/v1/handover"))
+            .header("Authorization", format!("Bearer {TOKEN}"))
+            .send("")
+            .unwrap()
+    })
+    .await
+    .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+    assert!(stepped.load(Ordering::SeqCst));
 }

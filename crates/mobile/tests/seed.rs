@@ -35,8 +35,7 @@ fn view(agent: &str) -> SessionView {
 
 fn project() -> ProjectView {
     let mut project = ProjectView::new("/work/cydonia-remote");
-    project
-        .files
+    std::sync::Arc::make_mut(&mut project.files)
         .insert("boards/road.toml".into(), File(BOARD.as_bytes().to_vec()));
     project
         .sessions

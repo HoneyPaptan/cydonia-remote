@@ -6,4 +6,6 @@ pub mod mirror;
 pub mod proto;
 pub mod receipts;
 #[cfg(feature = "server")]
+pub mod scope;
+#[cfg(feature = "server")]
 pub mod server;

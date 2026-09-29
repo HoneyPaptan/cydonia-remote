@@ -13,7 +13,7 @@ use remote::{
     hub::Hub,
     mirror::Mirror,
     proto::{File, ProjectView, Setup},
-    server::{self, Config},
+    server::{self, Config, StepDown},
 };
 use std::{
     cell::RefCell,
@@ -29,11 +29,13 @@ pub struct Options {
     pub listen: Vec<SocketAddr>,
     pub token: String,
     pub ui: Option<PathBuf>,
+    pub receipts: Option<PathBuf>,
+    pub step_down: Option<StepDown>,
 }
 
 struct Publisher {
     hub: Arc<Hub>,
-    files: HashMap<PathBuf, BTreeMap<String, File>>,
+    files: HashMap<PathBuf, Arc<BTreeMap<String, File>>>,
     dirty: HashSet<PathBuf>,
     unloaded: HashMap<String, Vec<ChatItem>>,
 }
@@ -90,7 +92,7 @@ impl Publisher {
         for project in open {
             if self.dirty.remove(&project.path) {
                 self.files
-                    .insert(project.path.clone(), view::export(&project.store()));
+                    .insert(project.path.clone(), Arc::new(view::export(&project.store())));
             }
             let mut held = ProjectView::new(project.path.to_string_lossy());
             held.files = self.files.get(&project.path).cloned().unwrap_or_default();
@@ -171,9 +173,11 @@ pub fn start(workspace: Entity<Workspace>, options: Options, cx: &mut App) -> Re
     let (dispatch, mut actions) = mpsc::unbounded();
     let router = server::router(
         Config {
-            token: options.token,
+            token: options.token.clone(),
             ui: options.ui,
             local: Some(super::local::Laptop::new(hub.clone())),
+            receipts: options.receipts,
+            step_down: options.step_down,
         },
         hub.clone(),
         dispatch,
@@ -182,7 +186,7 @@ pub fn start(workspace: Entity<Workspace>, options: Options, cx: &mut App) -> Re
         .worker_threads(2)
         .enable_all()
         .build()?;
-    let listeners = runtime.block_on(server::bind(&options.listen))?;
+    let listeners = super::takeover::bind(&runtime, &options.listen, &options.token)?;
     std::thread::Builder::new()
         .name("cydonia-remote".into())
         .spawn(move || {

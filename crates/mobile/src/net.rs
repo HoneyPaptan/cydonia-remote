@@ -1,5 +1,6 @@
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use remote::proto::{Ack, Answer, Command, Frame, Query, Snapshot};
+use remote::proto::{Ack, Answer, Command, Frame, SessionKey, Snapshot, Query, Upstream};
+use std::fmt;
 use wasm_bindgen::{JsCast as _, JsValue, closure::Closure};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{CloseEvent, Headers, MessageEvent, Request, RequestInit, Response, WebSocket};
@@ -14,21 +15,109 @@ pub struct Endpoint {
 }
 
 pub enum Inbound {
+    Opened,
     Frame(Frame),
     Closed,
 }
 
+#[derive(Debug)]
+pub enum Failure {
+    Status(u16),
+    Network(String),
+}
+
+impl Failure {
+    pub fn retryable(&self) -> bool {
+        match self {
+            Failure::Network(_) => true,
+            Failure::Status(code) => *code >= 500 || *code == 429,
+        }
+    }
+}
+
+impl fmt::Display for Failure {
+    fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Failure::Status(code) => write!(out, "answered {code}"),
+            Failure::Network(message) => out.write_str(message),
+        }
+    }
+}
+
+fn network(error: JsValue) -> Failure {
+    Failure::Network(text(error))
+}
+
 pub struct Socket {
     socket: WebSocket,
+    _open: Closure<dyn FnMut()>,
     _message: Closure<dyn FnMut(MessageEvent)>,
     _close: Closure<dyn FnMut(CloseEvent)>,
 }
 
+impl Socket {
+    pub fn focus(&self, keys: &[SessionKey]) {
+        let Ok(body) = serde_json::to_string(&Upstream::Focus { keys: keys.to_vec() }) else {
+            return;
+        };
+        let _ = self.socket.send_with_str(&body);
+    }
+}
+
 impl Drop for Socket {
     fn drop(&mut self) {
+        self.socket.set_onopen(None);
         self.socket.set_onmessage(None);
         self.socket.set_onclose(None);
         let _ = self.socket.close();
+    }
+}
+
+pub struct Ticker {
+    handle: i32,
+    _tick: Closure<dyn FnMut()>,
+}
+
+impl Drop for Ticker {
+    fn drop(&mut self) {
+        if let Some(window) = web_sys::window() {
+            window.clear_interval_with_handle(self.handle);
+        }
+    }
+}
+
+pub fn ticks(milliseconds: i32) -> (Option<Ticker>, UnboundedReceiver<()>) {
+    let (beat, beats) = mpsc::unbounded();
+    let tick = Closure::<dyn FnMut()>::new(move || {
+        let _ = beat.unbounded_send(());
+    });
+    let handle = web_sys::window().and_then(|window| {
+        window
+            .set_interval_with_callback_and_timeout_and_arguments_0(
+                tick.as_ref().unchecked_ref(),
+                milliseconds,
+            )
+            .ok()
+    });
+    (handle.map(|handle| Ticker { handle, _tick: tick }), beats)
+}
+
+pub fn now() -> f64 {
+    js_sys::Date::now()
+}
+
+fn version() -> Option<String> {
+    let window = web_sys::window()?;
+    js_sys::Reflect::get(&window, &"cydoniaVersion".into())
+        .ok()?
+        .as_string()
+        .filter(|version| !version.is_empty())
+}
+
+fn versioned(path: &str) -> String {
+    match version() {
+        Some(version) => format!("{path}?v={version}"),
+        None => path.to_owned(),
     }
 }
 
@@ -57,39 +146,48 @@ impl Endpoint {
         })
     }
 
-    async fn call(&self, method: &str, path: &str, body: Option<String>) -> Result<String, String> {
-        let headers = Headers::new().map_err(text)?;
+    async fn call(&self, method: &str, path: &str, body: Option<String>) -> Result<String, Failure> {
+        let headers = Headers::new().map_err(network)?;
         headers
             .set("Authorization", &format!("Bearer {}", self.token))
-            .map_err(text)?;
+            .map_err(network)?;
         let init = RequestInit::new();
         init.set_method(method);
         if let Some(body) = body {
-            headers
-                .set("Content-Type", "application/json")
-                .map_err(text)?;
+            headers.set("Content-Type", "application/json").map_err(network)?;
             init.set_body(&JsValue::from_str(&body));
         }
         init.set_headers(&headers);
         let request =
-            Request::new_with_str_and_init(&format!("{}{path}", self.base), &init).map_err(text)?;
-        let response: Response = JsFuture::from(window()?.fetch_with_request(&request))
+            Request::new_with_str_and_init(&format!("{}{path}", self.base), &init).map_err(network)?;
+        let window = web_sys::window().ok_or_else(|| Failure::Network("no window".to_owned()))?;
+        let response: Response = JsFuture::from(window.fetch_with_request(&request))
             .await
-            .map_err(text)?
+            .map_err(network)?
             .dyn_into()
-            .map_err(text)?;
+            .map_err(network)?;
         if !response.ok() {
-            return Err(format!("{path} answered {}", response.status()));
+            return Err(Failure::Status(response.status()));
         }
-        JsFuture::from(response.text().map_err(text)?)
+        JsFuture::from(response.text().map_err(network)?)
             .await
-            .map_err(text)?
+            .map_err(network)?
             .as_string()
-            .ok_or_else(|| "a body that is not text".to_owned())
+            .ok_or_else(|| Failure::Network("a body that is not text".to_owned()))
+    }
+
+    async fn call_json<T: serde::de::DeserializeOwned>(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<String>,
+    ) -> Result<T, Failure> {
+        let answer = self.call(method, path, body).await?;
+        serde_json::from_str(&answer).map_err(|error| Failure::Network(error.to_string()))
     }
 
     pub async fn asset(&self, path: &str) -> Option<Vec<u8>> {
-        let address = format!("{}/{path}", self.base);
+        let address = format!("{}/{}", self.base, versioned(path));
         let response: Response = JsFuture::from(window().ok()?.fetch_with_str(&address))
             .await
             .ok()?
@@ -102,21 +200,20 @@ impl Endpoint {
         Some(js_sys::Uint8Array::new(&buffer).to_vec())
     }
 
-    pub async fn snapshot(&self) -> Result<Snapshot, String> {
-        let body = self.call("GET", "/v1/snapshot", None).await?;
-        serde_json::from_str(&body).map_err(|error| error.to_string())
+    pub async fn snapshot(&self) -> Result<Snapshot, Failure> {
+        self.call_json("GET", "/v1/snapshot?scope=shell", None).await
     }
 
-    pub async fn command(&self, command: &Command) -> Result<Ack, String> {
-        let body = serde_json::to_string(command).map_err(|error| error.to_string())?;
-        let answer = self.call("POST", "/v1/commands", Some(body)).await?;
-        serde_json::from_str(&answer).map_err(|error| error.to_string())
+    pub async fn command(&self, command: &Command) -> Result<Ack, Failure> {
+        let body = serde_json::to_string(command).map_err(|error| Failure::Network(error.to_string()))?;
+        self.call_json("POST", "/v1/commands", Some(body)).await
     }
 
     pub async fn query(&self, query: &Query) -> Result<Answer, String> {
         let body = serde_json::to_string(query).map_err(|error| error.to_string())?;
-        let answer = self.call("POST", "/v1/query", Some(body)).await?;
-        serde_json::from_str(&answer).map_err(|error| error.to_string())
+        self.call_json("POST", "/v1/query", Some(body))
+            .await
+            .map_err(|failure| format!("/v1/query {failure}"))
     }
 
     fn socket_base(&self) -> String {
@@ -150,7 +247,11 @@ impl Endpoint {
     ) -> Result<Socket, String> {
         let socket = WebSocket::new_with_str_sequence(&self.socket_url(epoch, seq), &self.protocols())
             .map_err(text)?;
+        let opened = inbound.clone();
         let frames = inbound.clone();
+        let open = Closure::<dyn FnMut()>::new(move || {
+            let _ = opened.unbounded_send(Inbound::Opened);
+        });
         let message = Closure::<dyn FnMut(MessageEvent)>::new(move |event: MessageEvent| {
             let Some(body) = event.data().as_string() else {
                 return;
@@ -161,10 +262,12 @@ impl Endpoint {
         let close = Closure::<dyn FnMut(CloseEvent)>::new(move |_: CloseEvent| {
             let _ = inbound.unbounded_send(Inbound::Closed);
         });
+        socket.set_onopen(Some(open.as_ref().unchecked_ref()));
         socket.set_onmessage(Some(message.as_ref().unchecked_ref()));
         socket.set_onclose(Some(close.as_ref().unchecked_ref()));
         Ok(Socket {
             socket,
+            _open: open,
             _message: message,
             _close: close,
         })

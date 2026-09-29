@@ -31,22 +31,22 @@ impl Faces {
     }
 }
 
-async fn fetch_all(endpoint: &Endpoint, paths: &[&str]) -> Vec<Vec<u8>> {
-    futures::future::join_all(paths.iter().map(|path| endpoint.asset(path)))
-        .await
-        .into_iter()
-        .flatten()
-        .collect()
+async fn fetch_all(endpoint: &Endpoint, paths: &[&str]) -> Vec<Option<Vec<u8>>> {
+    futures::future::join_all(paths.iter().map(|path| endpoint.asset(path))).await
+}
+
+fn held(fetched: &[Option<Vec<u8>>]) -> bool {
+    fetched.iter().any(Option::is_some)
 }
 
 pub async fn fetch(endpoint: &Endpoint) -> Faces {
-    let sans = fetch_all(endpoint, &SANS).await;
-    let mono = fetch_all(endpoint, &MONO).await;
-    let symbols = fetch_all(endpoint, &[SYMBOLS]).await;
-    let (has_sans, has_mono) = (!sans.is_empty(), !mono.is_empty());
+    let paths: Vec<&str> = SANS.iter().chain(&MONO).chain([&SYMBOLS]).copied().collect();
+    let fetched = fetch_all(endpoint, &paths).await;
+    let sans = held(&fetched[..SANS.len()]);
+    let mono = held(&fetched[SANS.len()..SANS.len() + MONO.len()]);
     Faces {
-        files: sans.into_iter().chain(mono).chain(symbols).collect(),
-        sans: has_sans,
-        mono: has_mono,
+        files: fetched.into_iter().flatten().collect(),
+        sans,
+        mono,
     }
 }

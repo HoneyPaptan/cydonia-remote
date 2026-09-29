@@ -14,7 +14,6 @@ if command -v wasm-opt >/dev/null && [ "$profile" = release ]; then
     --enable-mutable-globals --enable-reference-types \
     -o "$out/cydonia_mobile_bg.wasm" "$out/cydonia_mobile_bg.wasm"
 fi
-cp crates/mobile/index.html "$out/index.html"
 gzip -9 -k -f "$out/cydonia_mobile_bg.wasm" "$out/cydonia_mobile.js"
 
 sans_dir="${SF_PRO_DIR:-$HOME/.local/share/fonts/SanFrancisco}"
@@ -47,4 +46,6 @@ if command -v pyftsubset >/dev/null; then
 else
   echo "pyftsubset not found: the phone keeps its built in fonts" >&2
 fi
-echo "$out"
+version="$(cat "$out"/cydonia_mobile_bg.wasm "$out"/cydonia_mobile.js "$fonts"/* 2>/dev/null | sha256sum | cut -c1-12)"
+sed "s/__VERSION__/$version/g" crates/mobile/index.html > "$out/index.html"
+echo "$out ($version)"

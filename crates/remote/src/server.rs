@@ -1,8 +1,12 @@
 use crate::{
     hub::Hub,
     log::Replay,
-    proto::{Ack, Action, Answer, Command, Event, Frame, Outcome, Query as Asked, Reason, Screen, ShellInput, Snapshot},
+    proto::{
+        Ack, Action, Answer, Command, Frame, Outcome, Query as Asked, Reason, Screen,
+        SessionKey, ShellInput, Upstream,
+    },
     receipts::Receipts,
+    scope::Scope,
 };
 use axum::{
     Json, Router,
@@ -17,25 +21,34 @@ use axum::{
     routing::{get, post},
 };
 use futures::channel::{mpsc, oneshot};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
-    io,
+    io::{self, Write as _},
     net::SocketAddr,
     path::{Component, Path, PathBuf},
     sync::Arc,
-    time::UNIX_EPOCH,
+    time::{Duration, UNIX_EPOCH},
 };
 use tokio::{net::TcpListener, sync::broadcast::error::RecvError};
 
 const RECEIPTS: usize = 1024;
 const COMMAND_BODY_LIMIT: usize = 64 * 1024 * 1024;
+const BEAT: Duration = Duration::from_secs(10);
+const HANDOVER_GRACE: Duration = Duration::from_millis(250);
+const IMMUTABLE: &str = "public, max-age=31536000, immutable";
+const REVALIDATE: &str = "no-cache";
+
+pub type StepDown = Arc<dyn Fn() + Send + Sync>;
 
 pub type Dispatch = mpsc::UnboundedSender<(Action, oneshot::Sender<Outcome>)>;
 
+#[derive(Default)]
 pub struct Config {
     pub token: String,
     pub ui: Option<PathBuf>,
     pub local: Option<Arc<dyn Local>>,
+    pub receipts: Option<PathBuf>,
+    pub step_down: Option<StepDown>,
 }
 
 pub trait Local: Send + Sync + 'static {
@@ -62,6 +75,7 @@ struct Shared {
     dispatch: Dispatch,
     receipts: Arc<tokio::sync::Mutex<Receipts>>,
     local: Option<Arc<dyn Local>>,
+    step_down: Option<StepDown>,
 }
 
 const PROTOCOL: &str = "cydonia";
@@ -74,19 +88,29 @@ struct Open {
 }
 
 #[derive(Deserialize)]
+struct Scoped {
+    scope: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct Subscribe {
     epoch: Option<u64>,
     seq: Option<u64>,
 }
 
 pub fn router(config: Config, hub: Arc<Hub>, dispatch: Dispatch) -> Router {
+    let receipts = match config.receipts {
+        Some(path) => Receipts::journaled(path, RECEIPTS),
+        None => Receipts::new(RECEIPTS),
+    };
     let shared = Shared {
         hub,
         token: config.token.into(),
         ui: config.ui.map(Into::into),
         dispatch,
-        receipts: Arc::new(tokio::sync::Mutex::new(Receipts::new(RECEIPTS))),
+        receipts: Arc::new(tokio::sync::Mutex::new(receipts)),
         local: config.local,
+        step_down: config.step_down,
     };
     Router::new()
         .route("/v1/snapshot", get(snapshot))
@@ -97,6 +121,7 @@ pub fn router(config: Config, hub: Arc<Hub>, dispatch: Dispatch) -> Router {
         .route("/v1/events", get(events))
         .route("/v1/query", post(query))
         .route("/v1/shell", get(shell))
+        .route("/v1/handover", post(handover))
         .fallback(get(ui))
         .with_state(shared)
 }
@@ -153,14 +178,56 @@ fn authorized_socket(shared: &Shared, headers: &HeaderMap) -> bool {
         || offered_protocols(headers).any(|offered| same(offered, &shared.token))
 }
 
+fn gzip(body: &[u8]) -> io::Result<Vec<u8>> {
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    encoder.write_all(body)?;
+    encoder.finish()
+}
+
+fn json_response<T: Serialize>(headers: &HeaderMap, value: &T) -> Response {
+    let Ok(plain) = serde_json::to_vec(value) else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    let (body, encoded) = match accepts_gzip(headers).then(|| gzip(&plain)) {
+        Some(Ok(packed)) => (packed, true),
+        _ => (plain, false),
+    };
+    let mut response = Body::from(body).into_response();
+    let answer = response.headers_mut();
+    answer.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    answer.insert(header::VARY, HeaderValue::from_static("accept-encoding"));
+    if encoded {
+        answer.insert(header::CONTENT_ENCODING, HeaderValue::from_static("gzip"));
+    }
+    response
+}
+
 async fn snapshot(
     State(shared): State<Shared>,
+    Query(scoped): Query<Scoped>,
     headers: HeaderMap,
-) -> Result<Json<Snapshot>, StatusCode> {
+) -> Response {
     if !authorized(&shared, &headers) {
-        return Err(StatusCode::UNAUTHORIZED);
+        return StatusCode::UNAUTHORIZED.into_response();
     }
-    Ok(Json(shared.hub.snapshot()))
+    match scoped.scope.as_deref() {
+        Some("shell") => json_response(&headers, &shared.hub.shell_snapshot()),
+        _ => json_response(&headers, &shared.hub.snapshot()),
+    }
+}
+
+async fn handover(State(shared): State<Shared>, headers: HeaderMap) -> StatusCode {
+    if !authorized(&shared, &headers) {
+        return StatusCode::UNAUTHORIZED;
+    }
+    let Some(step_down) = shared.step_down.clone() else {
+        return StatusCode::NOT_FOUND;
+    };
+    tokio::spawn(async move {
+        tokio::time::sleep(HANDOVER_GRACE).await;
+        step_down();
+    });
+    StatusCode::ACCEPTED
 }
 
 async fn command(
@@ -212,15 +279,17 @@ async fn query(
     State(shared): State<Shared>,
     headers: HeaderMap,
     Json(asked): Json<Asked>,
-) -> Result<Json<Answer>, StatusCode> {
+) -> Response {
     if !authorized(&shared, &headers) {
-        return Err(StatusCode::UNAUTHORIZED);
+        return StatusCode::UNAUTHORIZED.into_response();
     }
-    let local = shared.local.clone().ok_or(StatusCode::NOT_FOUND)?;
-    tokio::task::spawn_blocking(move || local.answer(asked))
-        .await
-        .map(Json)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    let Some(local) = shared.local.clone() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    match tokio::task::spawn_blocking(move || local.answer(asked)).await {
+        Ok(answer) => json_response(&headers, &answer),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 async fn shell(
@@ -276,37 +345,60 @@ async fn send(socket: &mut WebSocket, frame: &Frame) -> bool {
     socket.send(Message::Text(text.into())).await.is_ok()
 }
 
-fn event_frame(event: Event) -> Frame {
-    Frame::Event {
-        event: Box::new(event),
+async fn follow_focus(
+    socket: &mut WebSocket,
+    hub: &Hub,
+    scope: &mut Scope,
+    keys: Vec<SessionKey>,
+) -> bool {
+    scope.retain(&keys);
+    for key in keys {
+        if scope.focused(&key) {
+            continue;
+        }
+        let Some((session, seq)) = hub.session_at(&key) else {
+            continue;
+        };
+        scope.follow(key.clone(), seq);
+        let frame = Frame::Session {
+            key,
+            seq,
+            session: Box::new(session),
+        };
+        if !send(socket, &frame).await {
+            return false;
+        }
     }
+    true
 }
 
 async fn stream(mut socket: WebSocket, hub: Arc<Hub>, epoch: u64, seq: u64) {
     let mut subscription = hub.subscribe(epoch, seq);
-    let mut last = match subscription.replay {
+    let mut scope = Scope::default();
+    let mut last = seq;
+    match subscription.replay {
         Replay::Resync => {
             send(&mut socket, &Frame::Resync).await;
             return;
         }
         Replay::Events(events) => {
-            let mut last = seq;
             for event in events {
                 last = event.seq;
-                if !send(&mut socket, &event_frame(event)).await {
+                if !send(&mut socket, &scope.frame(event)).await {
                     return;
                 }
             }
-            last
         }
-    };
+    }
+    let mut beat = tokio::time::interval_at(tokio::time::Instant::now() + BEAT, BEAT);
+    beat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         tokio::select! {
             received = subscription.live.recv() => match received {
                 Ok(event) if event.seq <= last => {}
                 Ok(event) => {
                     last = event.seq;
-                    if !send(&mut socket, &event_frame(event)).await {
+                    if !send(&mut socket, &scope.frame(event)).await {
                         return;
                     }
                 }
@@ -316,7 +408,19 @@ async fn stream(mut socket: WebSocket, hub: Arc<Hub>, epoch: u64, seq: u64) {
                 }
                 Err(RecvError::Closed) => return,
             },
+            _ = beat.tick() => {
+                if !send(&mut socket, &Frame::Ping).await {
+                    return;
+                }
+            }
             incoming = socket.recv() => match incoming {
+                Some(Ok(Message::Text(text))) => {
+                    if let Ok(Upstream::Focus { keys }) = serde_json::from_str(&text)
+                        && !follow_focus(&mut socket, &hub, &mut scope, keys).await
+                    {
+                        return;
+                    }
+                }
                 Some(Ok(Message::Close(_))) | Some(Err(_)) | None => return,
                 Some(Ok(_)) => {}
             },
@@ -359,6 +463,10 @@ fn contained(root: &Path, requested: &str) -> Option<PathBuf> {
     resolved
         .starts_with(root.canonicalize().ok()?)
         .then_some(resolved)
+}
+
+fn is_versioned(query: &str) -> bool {
+    query.split('&').any(|pair| pair.starts_with("v="))
 }
 
 fn accepts_gzip(headers: &HeaderMap) -> bool {
@@ -421,7 +529,8 @@ async fn ui(State(shared): State<Shared>, uri: Uri, headers: HeaderMap) -> Respo
         header::CONTENT_TYPE,
         HeaderValue::from_static(content_type(&path)),
     );
-    answer.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    let caching = if uri.query().is_some_and(is_versioned) { IMMUTABLE } else { REVALIDATE };
+    answer.insert(header::CACHE_CONTROL, HeaderValue::from_static(caching));
     answer.insert(header::VARY, HeaderValue::from_static("accept-encoding"));
     if let Ok(tag) = HeaderValue::from_str(&tag) {
         answer.insert(header::ETAG, tag);

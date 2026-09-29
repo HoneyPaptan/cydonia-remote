@@ -41,12 +41,20 @@ fn streaming_frame_replaces_only_the_last_item() {
     let changes = assert_round_trip(&before, &after);
     assert_eq!(
         changes,
-        vec![Change::ItemReplace {
+        vec![Change::ItemText {
             key: key("/a", "s1"),
             index: 1,
-            item: agent("Working"),
+            text: "king".into(),
         }]
     );
+}
+
+#[test]
+fn a_rewritten_item_is_replaced_whole() {
+    let before = mirror(vec![project("/a", &[("s1", session(vec![agent("Wor")]))])]);
+    let after = mirror(vec![project("/a", &[("s1", session(vec![agent("Done")]))])]);
+    let changes = assert_round_trip(&before, &after);
+    assert!(matches!(changes.as_slice(), [Change::ItemReplace { .. }]));
 }
 
 #[test]
@@ -111,13 +119,11 @@ fn reordered_projects_are_reordered() {
 #[test]
 fn files_are_put_and_removed() {
     let mut before = project("/a", &[]);
-    before.files.insert("boards/one.toml".into(), file("old"));
-    before.files.insert("boards/two.toml".into(), file("gone"));
+    std::sync::Arc::make_mut(&mut before.files).insert("boards/one.toml".into(), file("old"));
+    std::sync::Arc::make_mut(&mut before.files).insert("boards/two.toml".into(), file("gone"));
     let mut after = project("/a", &[]);
-    after.files.insert("boards/one.toml".into(), file("new"));
-    after
-        .files
-        .insert("articles/x/content.md".into(), file("# x"));
+    std::sync::Arc::make_mut(&mut after.files).insert("boards/one.toml".into(), file("new"));
+    std::sync::Arc::make_mut(&mut after.files).insert("articles/x/content.md".into(), file("# x"));
     assert_round_trip(&mirror(vec![before]), &mirror(vec![after]));
 }
 
@@ -162,7 +168,7 @@ fn random_mirror(rng: &mut Rng) -> Mirror {
         }
         for name in ["one", "two"] {
             if rng.next(2) == 0 {
-                held.files.insert(
+                std::sync::Arc::make_mut(&mut held.files).insert(
                     format!("boards/{name}.toml"),
                     file(&format!("v{}", rng.next(3))),
                 );
@@ -201,4 +207,13 @@ fn a_new_agent_list_is_one_change() {
     after.agents.push("Codex".into());
     let changes = assert_round_trip(&before, &after);
     assert!(matches!(changes.as_slice(), [Change::Agents { .. }]));
+}
+
+#[test]
+fn a_shell_snapshot_carries_headers_and_no_transcript() {
+    let held = mirror(vec![project("/a", &[("s1", session(vec![user("hi"), agent("yo")]))])]);
+    let shell = held.shell(1, 2);
+    let view = &shell.projects[0].sessions["s1"];
+    assert!(view.items.is_empty());
+    assert_eq!(view.header, held.projects[0].sessions["s1"].header);
 }
