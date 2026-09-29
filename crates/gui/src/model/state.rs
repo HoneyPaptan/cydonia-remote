@@ -11,7 +11,7 @@
 
 use crate::model::settings;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{cell::RefCell, collections::BTreeMap, path::PathBuf, rc::Rc};
 
 /// The four things a project holds. Which one a launch lands on is the last
 /// one that was open, so the window comes back where it was left.
@@ -133,22 +133,37 @@ pub(crate) fn path() -> Option<PathBuf> {
     settings::dir().ok().map(|dir| dir.join("state.toml"))
 }
 
-/// Paths that have since vanished are dropped — a renamed folder would
-/// otherwise leave a tab no agent can spawn in. The active project is resolved
-/// by path first, so dropping an earlier one doesn't shift it.
-pub fn restore() -> State {
-    let stored: State = path()
-        .and_then(|path| std::fs::read_to_string(path).ok())
-        .and_then(|body| toml::from_str(&body).ok())
-        .unwrap_or_default();
-    let active = stored.projects.get(stored.active).cloned();
-    let projects: Vec<PathBuf> = stored
+/// Where a device with no state file keeps the same text: the phone hands in
+/// its browser storage, and [`save`] and [`kept`] use it in place of the disk.
+pub trait Keeper {
+    fn read(&self) -> Option<String>;
+    fn write(&self, body: &str);
+}
+
+thread_local! {
+    static KEEPER: RefCell<Option<Rc<dyn Keeper>>> = const { RefCell::new(None) };
+}
+
+pub fn keep_with(keeper: Rc<dyn Keeper>) {
+    KEEPER.with_borrow_mut(|held| *held = Some(keeper));
+}
+
+fn keeper() -> Option<Rc<dyn Keeper>> {
+    KEEPER.with_borrow(Clone::clone)
+}
+
+/// What the installed [`Keeper`] holds, if it holds something readable.
+pub fn kept() -> Option<State> {
+    toml::from_str(&keeper()?.read()?).ok()
+}
+
+/// `stored` laid over the projects that are open now: the active project is
+/// found by path first, so a project that is gone does not shift it.
+pub fn reconcile(stored: State, projects: Vec<PathBuf>) -> State {
+    let active = stored
         .projects
-        .into_iter()
-        .filter(|path| path.is_dir())
-        .collect();
-    let active = active
-        .and_then(|path| projects.iter().position(|open| *open == path))
+        .get(stored.active)
+        .and_then(|path| projects.iter().position(|open| open == path))
         .unwrap_or(0);
     State {
         projects,
@@ -166,9 +181,31 @@ pub fn restore() -> State {
     }
 }
 
+/// Paths that have since vanished are dropped — a renamed folder would
+/// otherwise leave a tab no agent can spawn in.
+pub fn restore() -> State {
+    let stored: State = path()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .and_then(|body| toml::from_str(&body).ok())
+        .unwrap_or_default();
+    let projects = stored
+        .projects
+        .iter()
+        .filter(|path| path.is_dir())
+        .cloned()
+        .collect();
+    reconcile(stored, projects)
+}
+
 /// Best effort: a state file that cannot be written is not worth failing a
 /// click over.
 pub fn save(state: &State) {
+    if let Some(keeper) = keeper() {
+        if let Ok(body) = toml::to_string_pretty(state) {
+            keeper.write(&body);
+        }
+        return;
+    }
     let Some(path) = path() else {
         return;
     };
@@ -179,3 +216,7 @@ pub fn save(state: &State) {
         let _ = std::fs::write(&path, body);
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/state_keep.rs"]
+mod keep_tests;
