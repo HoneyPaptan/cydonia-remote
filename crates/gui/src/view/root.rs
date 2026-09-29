@@ -437,6 +437,8 @@ pub struct Cydonia {
     pub(crate) swipe: Option<super::swipe::Swipe>,
     pub(crate) press: Option<super::swipe::Press>,
     pub(crate) quick: bool,
+    pub(crate) quick_for: Option<super::quick::Quick>,
+    pub(crate) quick_pending: Option<super::quick::Pending>,
     /// The window's bottom panel: its shell, and whether it is up.
     ///
     /// One to a window, like the sidebar and the right panel — every pane and
@@ -960,6 +962,7 @@ impl Cydonia {
         // read back from it rather than pushed by whoever caused the change.
         cx.observe_in(&workspace, window, |this, _, window, cx| {
             this.refresh_applied_search(cx);
+            this.settle_pending_quick(window, cx);
             let previous = this.leaf().composer.read(cx).session();
             this.sync_composer(cx);
             let current = this.leaf().composer.read(cx).session();
@@ -1012,6 +1015,8 @@ impl Cydonia {
             swipe: None,
             press: None,
             quick: false,
+            quick_for: None,
+            quick_pending: None,
             #[cfg(feature = "desktop")]
             terminal: None,
             changes_open: false,

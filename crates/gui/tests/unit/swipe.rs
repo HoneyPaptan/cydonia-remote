@@ -171,3 +171,30 @@ fn swiping_up_from_the_middle_leaves_quick_actions_closed(cx: &mut gpui::TestApp
     pan(0., -200., &mut visual);
     assert!(!root.read_with(&visual, |root, _| root.quick));
 }
+
+#[gpui::test]
+fn a_quick_action_asks_for_its_project_and_runs_there(cx: &mut gpui::TestAppContext) {
+    let scratch = Scratch::new("quick-project");
+    let (root, mut visual) = open_phone(&scratch, cx);
+    let second = scratch.0.join("second");
+    std::fs::create_dir_all(&second).unwrap();
+
+    root.update_in(&mut visual, |root, window, cx| {
+        root.open_quick_actions(cx);
+        root.choose_quick(crate::view::quick::Quick::Article, window, cx);
+    });
+    assert!(root.read_with(&visual, |root, _| root.quick && root.quick_for.is_some()));
+
+    root.update_in(&mut visual, |root, window, cx| {
+        root.quick_in_new_project(window, cx);
+        root.workspace
+            .update(cx, |workspace, cx| workspace.open_project(second.clone(), cx));
+    });
+    root.read_with(&visual, |root, cx| {
+        assert!(!root.quick);
+        assert!(root.quick_pending.is_none());
+        let workspace = root.workspace.read(cx);
+        let active = workspace.active.unwrap();
+        assert_eq!(workspace.projects[active].path, second);
+    });
+}

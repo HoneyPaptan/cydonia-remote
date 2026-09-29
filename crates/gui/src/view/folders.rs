@@ -166,14 +166,19 @@ impl Cydonia {
 
     pub(crate) fn dismiss_folders(&mut self, _: &DismissFolders, _: &mut Window, cx: &mut Context<Self>) {
         self.browsing = None;
+        self.quick_pending = None;
         cx.notify();
     }
 
-    fn open_folder(&mut self, path: String, cx: &mut Context<Self>) {
+    fn open_folder(&mut self, path: String, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(sink) = sink::get() {
             sink.project(Path::new(&path), true);
         }
+        if let Some(pending) = self.quick_pending.as_mut() {
+            pending.wanted = Some(path.into());
+        }
         self.browsing = None;
+        self.settle_pending_quick(window, cx);
         cx.notify();
     }
 
@@ -265,7 +270,7 @@ impl Cydonia {
             .button("Open as project", ButtonStyle::Prominent, None)
             .id("folder-open");
         let open = match ready.clone() {
-            Some(path) => open.on_click(cx.listener(move |this, _, _, cx| this.open_folder(path.clone(), cx))),
+            Some(path) => open.on_click(cx.listener(move |this, _, window, cx| this.open_folder(path.clone(), window, cx))),
             None => open.opacity(0.4),
         };
         div()
