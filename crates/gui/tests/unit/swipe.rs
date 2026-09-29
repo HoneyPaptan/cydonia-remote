@@ -1,6 +1,6 @@
 use super::*;
 use crate::model::{settings::Settings, state};
-use bezel::gpui::{PlatformInput, ScrollDelta, point, px, size};
+use bezel::gpui::{Focusable as _, PlatformInput, ScrollDelta, point, px, size};
 
 struct Scratch(std::path::PathBuf);
 
@@ -232,4 +232,56 @@ fn a_quick_session_asks_for_its_agent_after_its_project(cx: &mut gpui::TestAppCo
         let agent = root.workspace.read(cx).preferred_agent().unwrap();
         assert_eq!(agent.name, "second");
     });
+}
+
+fn grips_found(visual: &mut gpui::VisualTestContext) -> Vec<gpui::Point<gpui::Pixels>> {
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    visual.update(|window, cx| {
+        (0..39)
+            .flat_map(|x| (0..80).map(move |y| point(px(x as f32 * 10.), px(y as f32 * 10.))))
+            .filter(|at| touch::grip_at(*at, window, cx).is_some())
+            .collect()
+    })
+}
+
+fn focus_the_article(root: &gpui::Entity<Cydonia>, visual: &mut gpui::VisualTestContext) {
+    root.update_in(visual, |root, window, cx| {
+        let editor = root.pane_doc(cx).and_then(|article| article.editor.clone());
+        let editor = editor.expect("the open article has an editor");
+        window.focus(&editor.focus_handle(cx), cx);
+    });
+}
+
+fn open_article_with_grips(
+    scratch: &Scratch,
+    cx: &mut gpui::TestAppContext,
+) -> (gpui::Entity<Cydonia>, gpui::VisualTestContext) {
+    let (root, mut visual) = open_phone(scratch, cx);
+    root.update_in(&mut visual, |root, window, cx| root.open_article(0, 0, window, cx));
+    focus_the_article(&root, &mut visual);
+    assert!(!grips_found(&mut visual).is_empty(), "the article shows its block grips");
+    (root, visual)
+}
+
+#[gpui::test]
+fn a_grip_under_quick_actions_leaves_the_touch_to_the_sheet(cx: &mut gpui::TestAppContext) {
+    let scratch = Scratch::new("grip-quick");
+    let (root, mut visual) = open_article_with_grips(&scratch, cx);
+
+    root.update(&mut visual, |root, cx| root.open_quick_actions(cx));
+    assert_eq!(grips_found(&mut visual), vec![]);
+}
+
+#[gpui::test]
+fn a_grip_under_the_drawer_or_the_panel_leaves_the_touch_to_them(cx: &mut gpui::TestAppContext) {
+    let scratch = Scratch::new("grip-drawer");
+    let (root, mut visual) = open_article_with_grips(&scratch, cx);
+
+    root.update(&mut visual, |root, cx| root.toggle_sidebar(cx));
+    assert_eq!(grips_found(&mut visual), vec![]);
+    root.update(&mut visual, |root, cx| root.toggle_sidebar(cx));
+    pan(-200., 0., &mut visual);
+    assert_eq!(open(&root, &mut visual), (false, true));
+    focus_the_article(&root, &mut visual);
+    assert_eq!(grips_found(&mut visual), vec![]);
 }

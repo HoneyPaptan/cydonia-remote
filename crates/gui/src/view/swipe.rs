@@ -164,7 +164,7 @@ impl Cydonia {
     fn follow_grip(&mut self, event: &TouchDragEvent, window: &mut Window, cx: &mut Context<Self>) {
         match event.phase {
             TouchPhase::Started => {
-                let Some(grip) = touch::grip_at(event.start_position) else {
+                let Some(grip) = touch::grip_at(event.start_position, window, cx) else {
                     return;
                 };
                 window.prevent_default();
@@ -203,7 +203,7 @@ impl Cydonia {
         let down = f32::from(delta.y);
         match (event.touch_phase, self.swipe) {
             (TouchPhase::Started, _) => {
-                self.swipe = self.start_swipe(event.position, across, down, window);
+                self.swipe = self.start_swipe(event.position, across, down, window, cx);
             }
             (TouchPhase::Moved, Some(Swipe::Following(far))) => {
                 self.swipe = Some(Swipe::Following(far + across));
@@ -229,13 +229,13 @@ impl Cydonia {
         self.swipe.is_some()
     }
 
-    fn start_swipe(&self, at: Point<Pixels>, across: f32, down: f32, window: &Window) -> Option<Swipe> {
+    fn start_swipe(&self, at: Point<Pixels>, across: f32, down: f32, window: &Window, cx: &gpui::App) -> Option<Swipe> {
         if across.abs() > down.abs() {
-            let owned = !at_edge(at, window) && touch::scrolls_sideways_at(at);
+            let owned = !at_edge(at, window) && touch::scrolls_sideways_at(at, window, cx);
             return (!owned && !self.quick).then_some(Swipe::Following(across));
         }
         let height = f32::from(window.viewport_size().height);
-        let lower_half = f32::from(at.y) > height / 2. && touch::pulls_at(at);
+        let lower_half = f32::from(at.y) > height / 2. && touch::pulls_at(at, window, cx);
         let from_bottom = (f32::from(at.y) > height - PULL_BAND || lower_half) && down < 0.;
         (from_bottom || (self.quick && down > 0.)).then_some(Swipe::Pulling(down))
     }

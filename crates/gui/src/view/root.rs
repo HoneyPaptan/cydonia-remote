@@ -1408,6 +1408,7 @@ impl Cydonia {
             .inset_0()
             .bg(theme.scrim())
             .on_click(cx.listener(|this, _, _, cx| this.toggle_sidebar(cx)))
+            .child(bezel::ui::cover::cover())
             .child(
                 div()
                     .id("sidebar-drawer-sheet")

@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 
-use gpui::{Bounds, IntoElement, Pixels, Point, Styled, canvas, px};
+use gpui::{App, Bounds, IntoElement, Pixels, Point, Styled, Window, canvas, px, size};
+
+use crate::cover::{self, Mark};
 
 const GRIP_REACH: f32 = 12.;
 
@@ -12,7 +14,7 @@ enum Kind {
 }
 
 thread_local! {
-    static REGIONS: RefCell<Vec<(Kind, Bounds<Pixels>)>> = const { RefCell::new(Vec::new()) };
+    static REGIONS: RefCell<Vec<(Kind, Mark, Bounds<Pixels>)>> = const { RefCell::new(Vec::new()) };
 }
 
 pub fn forget() {
@@ -29,36 +31,41 @@ pub fn grip() -> impl IntoElement {
 }
 
 pub fn mark_pull(bounds: Bounds<Pixels>) {
-    REGIONS.with_borrow_mut(|regions| regions.push((Kind::Pull, bounds)));
+    record(Kind::Pull, bounds);
 }
 
-pub fn pulls_at(position: Point<Pixels>) -> bool {
-    found(Kind::Pull, position).is_some()
+pub fn pulls_at(position: Point<Pixels>, window: &Window, cx: &App) -> bool {
+    found(Kind::Pull, position, window, cx).is_some()
 }
 
-pub fn scrolls_sideways_at(position: Point<Pixels>) -> bool {
-    found(Kind::Sideways, position).is_some()
+pub fn scrolls_sideways_at(position: Point<Pixels>, window: &Window, cx: &App) -> bool {
+    found(Kind::Sideways, position, window, cx).is_some()
 }
 
-pub fn grip_at(position: Point<Pixels>) -> Option<Point<Pixels>> {
-    found(Kind::Grip, position).map(|bounds| bounds.center())
+pub fn grip_at(position: Point<Pixels>, window: &Window, cx: &App) -> Option<Point<Pixels>> {
+    found(Kind::Grip, position, window, cx).map(|bounds| bounds.center())
 }
 
-fn found(kind: Kind, position: Point<Pixels>) -> Option<Bounds<Pixels>> {
+fn record(kind: Kind, bounds: Bounds<Pixels>) {
+    REGIONS.with_borrow_mut(|regions| regions.push((kind, cover::mark(), bounds)));
+}
+
+fn found(kind: Kind, position: Point<Pixels>, window: &Window, cx: &App) -> Option<Bounds<Pixels>> {
+    let finger = Bounds::new(position, size(px(1.), px(1.)));
     REGIONS.with_borrow(|regions| {
         regions
             .iter()
             .rev()
-            .find(|(marked, bounds)| *marked == kind && bounds.contains(&position))
-            .map(|(_, bounds)| *bounds)
+            .filter(|(marked, _, bounds)| *marked == kind && bounds.contains(&position))
+            .find(|(_, at, _)| !cover::covered(*at, finger, window, cx))
+            .map(|(_, _, bounds)| *bounds)
     })
 }
 
 fn mark(kind: Kind) -> gpui::Canvas<()> {
     canvas(
         move |bounds, window, _| {
-            let visible = bounds.intersect(&window.content_mask().bounds);
-            REGIONS.with_borrow_mut(|regions| regions.push((kind, visible)));
+            record(kind, bounds.intersect(&window.content_mask().bounds));
         },
         |_, _, _, _| {},
     )

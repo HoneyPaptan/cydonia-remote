@@ -852,6 +852,7 @@ impl Cydonia {
                                 .bottom_0()
                                 .bg(theme.bg)
                                 .occlude()
+                                .child(bezel::ui::cover::cover())
                                 .child(panel)
                         }),
                     )
