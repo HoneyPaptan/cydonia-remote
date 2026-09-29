@@ -1,11 +1,13 @@
 package sh.cydonia.remote
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.Uri
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -52,6 +54,7 @@ class MainActivity : Activity() {
       )
     }
     getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(networkCallback)
+    askToNotify()
     val offered = Connection.from(intent?.data)
     if (offered != null) askFor(offered) else open(Connection.load(this))
   }
@@ -63,10 +66,23 @@ class MainActivity : Activity() {
 
   override fun onResume() {
     super.onResume()
+    visible = true
+    watchAgents()
     nudge()
   }
 
+  private fun askToNotify() {
+    val needed = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+      checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+    if (needed) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFY)
+  }
+
+  private fun watchAgents() {
+    if (Connection.load(this).complete) NoticeService.start(this)
+  }
+
   override fun onPause() {
+    visible = false
     web?.evaluateJavascript("window.dispatchEvent(new Event('cydonia-pause'))", null)
     super.onPause()
   }
@@ -123,6 +139,7 @@ class MainActivity : Activity() {
   fun switchTo(connection: Connection) {
     connection.save(this)
     Hosts.remember(this, connection)
+    watchAgents()
     open(connection)
   }
 
@@ -262,5 +279,8 @@ class MainActivity : Activity() {
   companion object {
     private const val LOAD_TIMEOUT = 8000L
     private const val PICK_FILES = 7
+    private const val NOTIFY = 8
+
+    @Volatile var visible = false
   }
 }

@@ -10,4 +10,10 @@
   <string name="change">Change connection</string>
   <string name="use_host">Use %1$s</string>
   <string name="not_private">%1$s is not a Tailscale address. Use https or a tailnet address so the token is never sent in the clear.</string>
+  <string name="watching_title">Cydonia is watching your agents</string>
+  <string name="watching_body">You will be told when one finishes or needs you.</string>
+  <string name="channel_watching">Connection</string>
+  <string name="channel_approvals">Needs your approval</string>
+  <string name="channel_done">Agent finished</string>
+  <string name="channel_lost">Agent lost</string>
 </resources>
