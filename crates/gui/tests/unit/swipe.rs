@@ -183,7 +183,7 @@ fn a_quick_action_asks_for_its_project_and_runs_there(cx: &mut gpui::TestAppCont
         root.open_quick_actions(cx);
         root.choose_quick(crate::view::quick::Quick::Article, window, cx);
     });
-    assert!(root.read_with(&visual, |root, _| root.quick && root.quick_for.is_some()));
+    assert!(root.read_with(&visual, |root, _| root.quick && root.quick_step.is_some()));
 
     root.update_in(&mut visual, |root, window, cx| {
         root.quick_in_new_project(window, cx);
@@ -196,5 +196,40 @@ fn a_quick_action_asks_for_its_project_and_runs_there(cx: &mut gpui::TestAppCont
         let workspace = root.workspace.read(cx);
         let active = workspace.active.unwrap();
         assert_eq!(workspace.projects[active].path, second);
+    });
+}
+
+fn named_agent(name: &str) -> crate::model::settings::Agent {
+    crate::model::settings::Agent {
+        name: name.into(),
+        id: None,
+        command: String::new(),
+        args: vec![],
+        env: Default::default(),
+    }
+}
+
+#[gpui::test]
+fn a_quick_session_asks_for_its_agent_after_its_project(cx: &mut gpui::TestAppContext) {
+    let scratch = Scratch::new("quick-agent");
+    let (root, mut visual) = open_phone(&scratch, cx);
+    root.update_in(&mut visual, |root, window, cx| {
+        root.workspace.update(cx, |workspace, _| {
+            workspace.settings.features.sessions = true;
+            workspace.settings.agents = vec![named_agent("first"), named_agent("second")];
+        });
+        root.open_quick_actions(cx);
+        root.choose_quick(crate::view::quick::Quick::Session, window, cx);
+        root.quick_in_project(0, window, cx);
+    });
+    assert!(root.read_with(&visual, |root, _| {
+        root.quick && matches!(root.quick_step, Some(crate::view::quick::Step::Agent))
+    }));
+
+    root.update_in(&mut visual, |root, window, cx| root.quick_with_agent(1, window, cx));
+    root.read_with(&visual, |root, cx| {
+        assert!(!root.quick);
+        let agent = root.workspace.read(cx).preferred_agent().unwrap();
+        assert_eq!(agent.name, "second");
     });
 }

@@ -5,7 +5,7 @@ use crate::view::{
 use bezel::{
     gpui::{self, AnyElement, Context, Window, div, prelude::*, px},
     theme::{TextStyle, Theme, Typeset},
-    ui::icons,
+    ui::icons::{self, Icon},
 };
 use std::path::PathBuf;
 
@@ -50,6 +50,12 @@ impl Quick {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum Step {
+    Project(Quick),
+    Agent,
+}
+
 pub(crate) struct Pending {
     quick: Quick,
     known: Vec<PathBuf>,
@@ -59,14 +65,14 @@ pub(crate) struct Pending {
 impl Cydonia {
     pub(crate) fn open_quick_actions(&mut self, cx: &mut Context<Self>) {
         self.quick = true;
-        self.quick_for = None;
+        self.quick_step = None;
         self.quick_pending = None;
         cx.notify();
     }
 
     pub(crate) fn close_quick_actions(&mut self, cx: &mut Context<Self>) -> bool {
         let was_open = std::mem::take(&mut self.quick);
-        self.quick_for = None;
+        self.quick_step = None;
         cx.notify();
         was_open
     }
@@ -74,24 +80,51 @@ impl Cydonia {
     pub(crate) fn choose_quick(&mut self, quick: Quick, window: &mut Window, cx: &mut Context<Self>) {
         match quick.needs_project() {
             true => {
-                self.quick_for = Some(quick);
+                self.quick_step = Some(Step::Project(quick));
                 cx.notify();
             }
             false => self.run_quick(quick, window, cx),
         }
     }
 
+    fn project_step(&mut self) -> Option<Quick> {
+        match self.quick_step.take() {
+            Some(Step::Project(quick)) => Some(quick),
+            _ => None,
+        }
+    }
+
     pub(crate) fn quick_in_project(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(quick) = self.quick_for.take() else {
+        let Some(quick) = self.project_step() else {
             return;
         };
         self.workspace
             .update(cx, |workspace, cx| workspace.select_project(ix, cx));
-        self.run_quick(quick, window, cx);
+        self.continue_quick(quick, window, cx);
+    }
+
+    /// A new session asks for its agent once a project is picked, unless only
+    /// one is installed, which leaves nothing to choose.
+    fn continue_quick(&mut self, quick: Quick, window: &mut Window, cx: &mut Context<Self>) {
+        let choices = self.workspace.read(cx).settings.agents.len();
+        match quick {
+            Quick::Session if choices > 1 => {
+                self.quick = true;
+                self.quick_step = Some(Step::Agent);
+                cx.notify();
+            }
+            _ => self.run_quick(quick, window, cx),
+        }
+    }
+
+    pub(crate) fn quick_with_agent(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
+        self.leave_quick(window);
+        self.pick_agent(ix, window, cx);
+        cx.notify();
     }
 
     pub(crate) fn quick_in_new_project(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(quick) = self.quick_for.take() else {
+        let Some(quick) = self.project_step() else {
             return;
         };
         let known = self
@@ -128,15 +161,19 @@ impl Cydonia {
         self.quick_pending = None;
         self.workspace
             .update(cx, |workspace, cx| workspace.select_project(ix, cx));
-        self.run_quick(quick, window, cx);
+        self.continue_quick(quick, window, cx);
     }
 
-    fn run_quick(&mut self, quick: Quick, window: &mut Window, cx: &mut Context<Self>) {
+    fn leave_quick(&mut self, window: &Window) {
         self.quick = false;
-        self.quick_for = None;
+        self.quick_step = None;
         if !self.sidebar_docked(window) {
             self.sidebar_open = false;
         }
+    }
+
+    fn run_quick(&mut self, quick: Quick, window: &mut Window, cx: &mut Context<Self>) {
+        self.leave_quick(window);
         match quick {
             Quick::Session => self.new_session_action(&NewSession, window, cx),
             Quick::Article => self.new_article_action(&NewArticle, window, cx),
@@ -168,7 +205,7 @@ impl Cydonia {
     fn project_row(
         &self,
         id: (&'static str, usize),
-        icon: &'static [u8],
+        icon: impl Into<Icon>,
         name: String,
         path: Option<String>,
         theme: &Theme,
@@ -231,24 +268,50 @@ impl Cydonia {
         rows
     }
 
+    fn quick_agents(&self, theme: &Theme, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let workspace = self.workspace.read(cx);
+        workspace
+            .settings
+            .agents
+            .iter()
+            .enumerate()
+            .map(|(ix, agent)| {
+                let icon = workspace
+                    .agent_icon(&agent.name)
+                    .unwrap_or_else(|| icons::development::Bot.into());
+                self.project_row(("quick-agent", ix), icon, agent.name.clone(), None, theme)
+                    .on_click(cx.listener(move |this, _, window, cx| this.quick_with_agent(ix, window, cx)))
+                    .into_any_element()
+            })
+            .collect()
+    }
+
+    fn quick_list(&self, id: &'static str, rows: Vec<AnyElement>) -> AnyElement {
+        div()
+            .id(id)
+            .max_h(px(420.))
+            .overflow_y_scroll()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .children(rows)
+            .into_any_element()
+    }
+
     pub(crate) fn quick_actions(&self, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
         if !self.quick {
             return None;
         }
         let theme = Theme::of(cx).clone();
         let columns = if narrow(window) { 2 } else { 4 };
-        let (caption, body) = match self.quick_for {
-            Some(quick) => (
+        let (caption, body) = match self.quick_step {
+            Some(Step::Project(quick)) => (
                 format!("{} in which project?", quick.label()),
-                div()
-                    .id("quick-projects")
-                    .max_h(px(420.))
-                    .overflow_y_scroll()
-                    .flex()
-                    .flex_col()
-                    .gap(px(8.))
-                    .children(self.quick_projects(&theme, cx))
-                    .into_any_element(),
+                self.quick_list("quick-projects", self.quick_projects(&theme, cx)),
+            ),
+            Some(Step::Agent) => (
+                "New session with which agent?".to_owned(),
+                self.quick_list("quick-agents", self.quick_agents(&theme, cx)),
             ),
             None => (
                 "Quick actions".to_owned(),
