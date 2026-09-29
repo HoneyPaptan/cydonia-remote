@@ -501,3 +501,38 @@ async fn a_handover_asks_the_host_to_step_down() {
     tokio::time::sleep(std::time::Duration::from_millis(600)).await;
     assert!(stepped.load(Ordering::SeqCst));
 }
+
+fn working_then(status: cydonia_remote::proto::Status) -> Mirror {
+    let mut view = session(Vec::new());
+    view.header = common::header(status);
+    Mirror {
+        projects: vec![project("/work", &[("one", view)])],
+        ..Mirror::default()
+    }
+}
+
+#[tokio::test]
+async fn a_notice_poll_waits_for_the_next_notice_and_needs_the_token() {
+    let running = start().await;
+    running.hub.publish(working_then(cydonia_remote::proto::Status::Working));
+    let latest = notices(running.address, "").await.latest;
+
+    assert_eq!(get(running.address, "/v1/notices", None).await, Err(401));
+
+    let address = running.address;
+    let query = format!("?after={latest}&wait=10");
+    let waiting = tokio::spawn(async move { notices(address, &query).await });
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    running.hub.publish(working_then(cydonia_remote::proto::Status::Idle));
+
+    let heard = waiting.await.unwrap();
+    assert_eq!(heard.notices.len(), 1);
+    assert_eq!(heard.notices[0].title, "Remote protocol");
+    let quiet = notices(running.address, &format!("?after={}", heard.latest)).await;
+    assert_eq!(quiet.notices, vec![]);
+}
+
+async fn notices(address: SocketAddr, query: &str) -> cydonia_remote::notice::Notices {
+    let body = get(address, &format!("/v1/notices{query}"), Some(TOKEN)).await.unwrap();
+    serde_json::from_str(&body).unwrap()
+}

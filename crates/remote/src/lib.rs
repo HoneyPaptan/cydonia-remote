@@ -3,6 +3,7 @@ pub mod bytes;
 pub mod hub;
 pub mod log;
 pub mod mirror;
+pub mod notice;
 pub mod proto;
 pub mod receipts;
 #[cfg(feature = "server")]

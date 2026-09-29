@@ -79,6 +79,7 @@ struct Shared {
 }
 
 const PROTOCOL: &str = "cydonia";
+const NOTICE_WAIT_LIMIT: u64 = 30;
 
 #[derive(Deserialize)]
 struct Open {
@@ -90,6 +91,12 @@ struct Open {
 #[derive(Deserialize)]
 struct Scoped {
     scope: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct Waiting {
+    after: Option<u64>,
+    wait: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -119,6 +126,7 @@ pub fn router(config: Config, hub: Arc<Hub>, dispatch: Dispatch) -> Router {
             post(command).layer(DefaultBodyLimit::max(COMMAND_BODY_LIMIT)),
         )
         .route("/v1/events", get(events))
+        .route("/v1/notices", get(notices))
         .route("/v1/query", post(query))
         .route("/v1/shell", get(shell))
         .route("/v1/handover", post(handover))
@@ -213,6 +221,32 @@ async fn snapshot(
     match scoped.scope.as_deref() {
         Some("shell") => json_response(&headers, &shared.hub.shell_snapshot()),
         _ => json_response(&headers, &shared.hub.snapshot()),
+    }
+}
+
+async fn notices(
+    State(shared): State<Shared>,
+    Query(waiting): Query<Waiting>,
+    headers: HeaderMap,
+) -> Response {
+    if !authorized(&shared, &headers) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let Some(after) = waiting.after else {
+        return json_response(&headers, &shared.hub.notices_after(u64::MAX));
+    };
+    let mut changes = shared.hub.watch_notices();
+    let patience = Duration::from_secs(waiting.wait.unwrap_or_default().min(NOTICE_WAIT_LIMIT));
+    let deadline = tokio::time::Instant::now() + patience;
+    loop {
+        let found = shared.hub.notices_after(after);
+        if !found.notices.is_empty() {
+            return json_response(&headers, &found);
+        }
+        match tokio::time::timeout_at(deadline, changes.changed()).await {
+            Ok(Ok(())) => continue,
+            _ => return json_response(&headers, &found),
+        }
     }
 }
 
