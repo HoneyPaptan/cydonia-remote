@@ -342,3 +342,18 @@ fn missing_archive_cannot_be_overwritten_with_an_empty_transcript() {
     chat.flush();
     assert!(store.sessions().is_empty());
 }
+
+#[test]
+fn a_turn_followed_from_the_laptop_keeps_its_own_clock() {
+    let scratch = Scratch::new();
+    let mut chat = scratch.chat();
+    assert_eq!(chat.elapsed(), None);
+    chat.follow_turn(true);
+    let started = chat.turn_started;
+    assert!(chat.streaming && chat.elapsed().is_some());
+    chat.follow_turn(true);
+    assert_eq!(chat.turn_started, started, "a repeated header must not restart the clock");
+    chat.follow_turn(false);
+    assert!(!chat.streaming);
+    assert_eq!(chat.elapsed(), None);
+}

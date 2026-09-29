@@ -139,6 +139,7 @@ pub struct State {
     /// one between them would have both painting the geometry of whichever
     /// was built last.
     pub(crate) mark: Rc<RefCell<Frame>>,
+    spin: Rc<Cell<usize>>,
     /// What the pane's find bar looks for, handed over by each [`render`].
     find: RefCell<Option<Query>>,
     /// The find hit the reader is on: its item, and where in it.
@@ -596,6 +597,9 @@ pub fn render(
                             .px(px(24.))
                             .when(index == 0, |row| row.pt(px(PAD)))
                             .child(zone(chat, turn, running, window, cx))
+                            .when(running && turn.range.len() > 1, |row| {
+                                row.child(div().pb(px(28.)).child(live_orb(chat, cx)))
+                            })
                             .when(running && turn.range.len() <= 1, |row| {
                                 row.child(working(chat, turn.range.start, cx))
                             }),
@@ -1514,7 +1518,8 @@ pub fn orb_of(chat: &ChatSession) -> OrbState {
         .rposition(|item| matches!(item, ChatItem::User(_)))
         .unwrap_or(0);
     let question = chat.items.get(at).and_then(item_text).unwrap_or_default();
-    orb_for(question)
+    let states = OrbState::ALL_STATES;
+    states[(asked_hash(question) + chat.transcript.spin.get()) % states.len()]
 }
 
 /// The same choice, made from any text — a card's own words, where there is no
@@ -1597,18 +1602,31 @@ fn spend(chat: &ChatSession, theme: &Theme) -> Option<AnyElement> {
 /// The turn in flight, while it has produced nothing to show yet. `at` is the
 /// turn's first item — the question, which is what its word and its orb come
 /// from.
+fn live_orb(chat: &ChatSession, cx: &mut Context<Workspace>) -> AnyElement {
+    let spin = chat.transcript.spin.clone();
+    let since = chat.elapsed().unwrap_or_default();
+    div()
+        .id("working-orb")
+        .flex_none()
+        .cursor_pointer()
+        .on_click(move |_, _, cx| {
+            spin.set(spin.get() + 1);
+            cx.stop_propagation();
+        })
+        .child(orb(orb_of(chat), since, &chat.transcript.orb, cx))
+        .into_any_element()
+}
+
 fn working(chat: &ChatSession, at: usize, cx: &mut Context<Workspace>) -> AnyElement {
     let theme = Theme::of(cx).clone();
     let asked = chat.items.get(at).and_then(item_text).unwrap_or_default();
-    let state = orb_of(chat);
-    let since = chat.elapsed().unwrap_or_default();
     div()
         .flex()
         .flex_row()
         .items_center()
         .gap(px(8.))
         .pb(px(28.))
-        .child(orb(state, since, &chat.transcript.orb, cx))
+        .child(live_orb(chat, cx))
         .child(
             div()
                 .text_style(TextStyle::Callout)

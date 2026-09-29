@@ -46,10 +46,10 @@ pub fn header(chat: &mut ChatSession, header: &SessionHeader) {
     chat.sent_at = header.sent_at.clone();
     chat.plan = header.plan.clone();
     chat.updated = UNIX_EPOCH + Duration::from_secs(header.updated);
-    chat.streaming = matches!(
+    chat.follow_turn(matches!(
         header.status,
         Status::Working | Status::WaitingForPermission
-    );
+    ));
     chat.connection = match header.status {
         Status::Connecting => Connection::Connecting,
         Status::Lost => Connection::Lost,

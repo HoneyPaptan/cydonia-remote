@@ -569,7 +569,19 @@ impl ChatSession {
 
     /// How long the turn in flight has been running.
     pub fn elapsed(&self) -> Option<Duration> {
-        self.flight?.at.elapsed().ok()
+        match self.flight {
+            Some(flight) => flight.at.elapsed().ok(),
+            None => self.turn_started.filter(|_| self.streaming).map(|at| at.elapsed()),
+        }
+    }
+
+    pub fn follow_turn(&mut self, running: bool) {
+        match (running, self.streaming) {
+            (true, false) => self.turn_started = Some(Instant::now()),
+            (false, _) => self.turn_started = None,
+            (true, true) => {}
+        }
+        self.streaming = running;
     }
 
     /// What the turn in flight has spent, as the agent counts context.
