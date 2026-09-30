@@ -166,6 +166,7 @@ pub struct Appearance {
     pub highlight: Highlight,
     pub background_effect: crate::model::backdrop::Effect,
     pub background_intensity: f32,
+    pub background_blur: f32,
 }
 
 /// A highlight colour, by the name [`markdown::HighlightColor`] stores.
@@ -283,6 +284,7 @@ impl Default for Appearance {
             highlight: Highlight::default(),
             background_effect: crate::model::backdrop::Effect::default(),
             background_intensity: crate::model::backdrop::DEFAULT_INTENSITY,
+            background_blur: 0.,
         }
     }
 }
@@ -299,6 +301,7 @@ impl Appearance {
         self.mono_font_size = clamp_content_text_size(self.mono_font_size);
         self.background_intensity =
             crate::model::backdrop::clamp_intensity(self.background_intensity);
+        self.background_blur = crate::model::backdrop::clamp_blur(self.background_blur);
         // A family hand-edited to the empty string names nothing; it is the
         // same answer as the key being absent.
         self.ui_font = self.ui_font.take().filter(|name| !name.trim().is_empty());
@@ -766,6 +769,7 @@ fn write_appearance(doc: &mut toml_edit::DocumentMut, appearance: &Appearance) -
     held["background_effect"] = toml_edit::value(appearance.background_effect.key());
     held["background_intensity"] =
         toml_edit::value(f64::from(appearance.background_intensity));
+    held["background_blur"] = toml_edit::value(f64::from(appearance.background_blur));
     Ok(())
 }
 

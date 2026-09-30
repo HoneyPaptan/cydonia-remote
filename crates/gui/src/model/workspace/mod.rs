@@ -301,6 +301,7 @@ impl Workspace {
             highlight: self.settings.appearance.highlight,
             background_effect: self.settings.appearance.background_effect,
             background_intensity: self.settings.appearance.background_intensity,
+            background_blur: self.settings.appearance.background_blur,
         });
     }
 
@@ -705,6 +706,14 @@ impl Workspace {
 
     pub fn choose_background(&mut self, path: std::path::PathBuf, cx: &mut Context<Self>) {
         backdrop::choose(path, cx);
+        cx.notify();
+    }
+
+    pub fn set_background_blur(&mut self, blur: f32, cx: &mut Context<Self>) {
+        let blur = backdrop::clamp_blur(blur);
+        self.settings.appearance.background_blur = blur;
+        backdrop::set_blur(blur, cx);
+        self.save_appearance();
         cx.notify();
     }
 

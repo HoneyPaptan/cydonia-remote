@@ -17,6 +17,8 @@ const SHELL: &str = "cydonia-backdrop";
 struct Look {
     effect: Effect,
     intensity: f32,
+    #[serde(default)]
+    blur: f32,
 }
 
 fn storage() -> Option<web_sys::Storage> {
@@ -50,8 +52,8 @@ impl Vault for Shelf {
         }
     }
 
-    fn keep_look(&self, effect: Effect, intensity: f32) {
-        if let Ok(body) = serde_json::to_string(&Look { effect, intensity }) {
+    fn keep_look(&self, effect: Effect, intensity: f32, blur: f32) {
+        if let Ok(body) = serde_json::to_string(&Look { effect, intensity, blur }) {
             write(LOOK, &body);
         }
     }
@@ -153,6 +155,7 @@ pub fn install(appearance: &mut Appearance) {
     if let Some(look) = read(LOOK).and_then(|body| serde_json::from_str::<Look>(&body).ok()) {
         appearance.background_effect = look.effect;
         appearance.background_intensity = backdrop::clamp_intensity(look.intensity);
+        appearance.background_blur = backdrop::clamp_blur(look.blur);
     }
     if let Some(wall) = web_sys::window()
         .and_then(|window| window.document())

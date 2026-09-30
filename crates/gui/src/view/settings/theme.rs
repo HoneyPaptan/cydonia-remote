@@ -146,7 +146,8 @@ impl SettingsWindow {
                     .group_box()
                     .child(self.background_image_row(cx))
                     .child(self.background_effect_row(cx))
-                    .child(self.background_strength_row(cx)),
+                    .child(self.background_strength_row(cx))
+            .child(self.background_blur_row(cx)),
             )
             .into_any_element()
     }
@@ -305,6 +306,18 @@ impl SettingsWindow {
             move |workspace, fraction, cx| {
                 workspace.set_background_intensity(low + fraction * (high - low), cx);
             },
+            cx,
+        )
+    }
+
+    fn background_blur_row(&self, cx: &mut Context<Self>) -> AnyElement {
+        let blur = self.workspace.read(cx).settings.appearance.background_blur;
+        self.tint_row(
+            "background-blur",
+            "Blur",
+            "Softens the picture so the content above stays easy to read.",
+            blur,
+            |workspace, fraction, cx| workspace.set_background_blur(fraction, cx),
             cx,
         )
     }

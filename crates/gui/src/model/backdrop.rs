@@ -11,6 +11,9 @@ const FOLDER: &str = "backdrop";
 
 pub const INTENSITY: (f32, f32) = (0.1, 0.9);
 pub const DEFAULT_INTENSITY: f32 = 0.5;
+pub const BLUR_STEPS: u8 = 10;
+const BLUR_DOWNSCALE: u32 = 4;
+const BLUR_SIGMA_PER_STEP: f32 = 0.9;
 
 const BAYER: [[u8; 4]; 4] = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
 
@@ -70,6 +73,28 @@ impl Effect {
     const fn follows_paper(self) -> bool {
         !matches!(self, Self::None | Self::Dither)
     }
+}
+
+pub fn clamp_blur(value: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(0., 1.)
+    } else {
+        0.
+    }
+}
+
+fn blurred(image: RgbaImage, steps: u8) -> RgbaImage {
+    if steps == 0 {
+        return image;
+    }
+    let (width, height) = image.dimensions();
+    let small = image::imageops::resize(
+        &image,
+        (width / BLUR_DOWNSCALE).max(1),
+        (height / BLUR_DOWNSCALE).max(1),
+        image::imageops::FilterType::Triangle,
+    );
+    image::imageops::blur(&small, f32::from(steps) * BLUR_SIGMA_PER_STEP)
 }
 
 pub fn clamp_intensity(value: f32) -> f32 {
@@ -228,7 +253,7 @@ pub trait Vault {
     fn image(&self) -> Option<Vec<u8>>;
     fn keep_image(&self, bytes: &[u8]);
     fn drop_image(&self);
-    fn keep_look(&self, effect: Effect, intensity: f32);
+    fn keep_look(&self, effect: Effect, intensity: f32, blur: f32);
 }
 
 pub trait Stage {
@@ -256,7 +281,7 @@ impl Vault for FileVault {
         }
     }
 
-    fn keep_look(&self, _: Effect, _: f32) {}
+    fn keep_look(&self, _: Effect, _: f32, _: f32) {}
 }
 
 thread_local! {
@@ -284,13 +309,15 @@ fn stage() -> Option<Rc<dyn Stage>> {
 struct Key {
     effect: Effect,
     light: bool,
+    blur: u8,
 }
 
 impl Key {
-    fn new(effect: Effect, light: bool) -> Self {
+    fn new(effect: Effect, light: bool, blur: f32) -> Self {
         Self {
             effect,
             light: light && effect.follows_paper(),
+            blur: (clamp_blur(blur) * f32::from(BLUR_STEPS)).round() as u8,
         }
     }
 }
@@ -299,6 +326,7 @@ pub struct Backdrop {
     source: Option<Arc<Source>>,
     effect: Effect,
     intensity: f32,
+    blur: f32,
     ready: Option<(Key, Arc<RenderImage>)>,
     pending: Option<Key>,
 }
@@ -313,11 +341,12 @@ fn stored() -> Option<PathBuf> {
     Some(folder()?.join(SOURCE_FILE))
 }
 
-pub fn init(effect: Effect, intensity: f32, cx: &mut App) {
+pub fn init(effect: Effect, intensity: f32, blur: f32, cx: &mut App) {
     cx.set_global(Backdrop {
         source: None,
         effect,
         intensity: clamp_intensity(intensity),
+        blur: clamp_blur(blur),
         ready: None,
         pending: None,
     });
@@ -392,14 +421,21 @@ pub fn clear(cx: &mut App) {
 pub fn set_effect(effect: Effect, cx: &mut App) {
     let held = cx.global_mut::<Backdrop>();
     held.effect = effect;
-    vault().keep_look(effect, held.intensity);
+    vault().keep_look(effect, held.intensity, held.blur);
     cx.refresh_windows();
 }
 
 pub fn set_intensity(intensity: f32, cx: &mut App) {
     let held = cx.global_mut::<Backdrop>();
     held.intensity = clamp_intensity(intensity);
-    vault().keep_look(held.effect, held.intensity);
+    vault().keep_look(held.effect, held.intensity, held.blur);
+    cx.refresh_windows();
+}
+
+pub fn set_blur(blur: f32, cx: &mut App) {
+    let held = cx.global_mut::<Backdrop>();
+    held.blur = clamp_blur(blur);
+    vault().keep_look(held.effect, held.intensity, held.blur);
     cx.refresh_windows();
 }
 
@@ -433,7 +469,7 @@ pub fn present(light: bool, cx: &mut App) -> Option<Arc<RenderImage>> {
 fn frame(light: bool, cx: &mut App) -> Option<Arc<RenderImage>> {
     let held = cx.try_global::<Backdrop>()?;
     let source = held.source.clone()?;
-    let key = Key::new(held.effect, light);
+    let key = Key::new(held.effect, light, held.blur);
     let shown = held.ready.as_ref().map(|(_, image)| image.clone());
     if held.ready.as_ref().is_some_and(|(ready, _)| *ready == key) || held.pending == Some(key) {
         return shown;
@@ -442,7 +478,7 @@ fn frame(light: bool, cx: &mut App) -> Option<Arc<RenderImage>> {
     cx.spawn(async move |cx| {
         let image = cx
             .background_executor()
-            .spawn(async move { artwork(source.render(key.effect, key.light)) })
+            .spawn(async move { artwork(blurred(source.render(key.effect, key.light), key.blur)) })
             .await;
         cx.update(|cx| {
             let held = cx.global_mut::<Backdrop>();
@@ -500,8 +536,8 @@ mod tests {
 
     #[test]
     fn dither_ignores_paper_and_the_key_reflects_it() {
-        assert_eq!(Key::new(Effect::Dither, true), Key::new(Effect::Dither, false));
-        assert_ne!(Key::new(Effect::Ascii, true), Key::new(Effect::Ascii, false));
+        assert_eq!(Key::new(Effect::Dither, true, 0.), Key::new(Effect::Dither, false, 0.));
+        assert_ne!(Key::new(Effect::Ascii, true, 0.), Key::new(Effect::Ascii, false, 0.));
     }
 
     #[test]
@@ -529,5 +565,16 @@ mod tests {
         let kept = fixture().keepsake().expect("encodes");
         let back = Source::decode(&kept).expect("decodes");
         assert_eq!((back.width, back.height), (60, 32));
+    }
+
+    #[test]
+    fn blur_steps_follow_the_slider_and_a_blurred_image_is_smaller_and_softer() {
+        assert_ne!(Key::new(Effect::Dither, false, 0.), Key::new(Effect::Dither, false, 0.5));
+        assert_eq!(Key::new(Effect::Dither, false, 7.), Key::new(Effect::Dither, false, 1.));
+        let source = fixture();
+        let sharp = source.render(Effect::Dither, false);
+        let soft = blurred(sharp.clone(), BLUR_STEPS);
+        assert_eq!(soft.dimensions(), (15, 8));
+        assert_eq!(blurred(sharp.clone(), 0), sharp);
     }
 }
