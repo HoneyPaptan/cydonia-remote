@@ -287,7 +287,7 @@ struct Client {
     epoch: Cell<u64>,
     seq: Cell<u64>,
     focus: Rc<Focus>,
-    refocus: RefCell<UnboundedReceiver<()>>,
+    refocus: futures::lock::Mutex<UnboundedReceiver<()>>,
     remembered: Cell<(f64, u64)>,
 }
 
@@ -412,7 +412,7 @@ impl Client {
             return Ending::Lost;
         };
         let (_ticker, mut checks) = net::ticks(HEARTBEAT_CHECK);
-        let mut refocus = self.refocus.borrow_mut();
+        let mut refocus = self.refocus.lock().await;
         let mut heard = net::now();
         loop {
             let woke = select! {
@@ -562,7 +562,7 @@ async fn boot() -> Result<(), String> {
                 epoch: Cell::new(epoch),
                 seq: Cell::new(seq),
                 focus,
-                refocus: RefCell::new(refocused),
+                refocus: futures::lock::Mutex::new(refocused),
                 remembered: Cell::new((net::now(), seq)),
             });
             let initial = client.mirror.borrow().clone();
