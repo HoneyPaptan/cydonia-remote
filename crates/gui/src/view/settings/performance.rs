@@ -232,6 +232,7 @@ impl SettingsWindow {
                 .items_center()
                 .justify_center()
                 .bg(theme.scrim())
+                .child(bezel::ui::cover::cover())
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.editing = None;
                     cx.notify();

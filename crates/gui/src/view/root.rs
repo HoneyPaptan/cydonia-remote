@@ -1518,6 +1518,7 @@ impl Cydonia {
                 .justify_center()
                 .when(!narrow, |scrim| scrim.p(px(24.)))
                 .bg(theme.scrim())
+                .child(bezel::ui::cover::cover())
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.settings_sheet = None;
                     cx.notify();
