@@ -13,6 +13,15 @@ const SANS: [&str; 5] = [
 ];
 const MONO: [&str; 2] = ["fonts/mono-regular.otf", "fonts/mono-bold.otf"];
 const SYMBOLS: &str = "fonts/symbols.ttf";
+const PICKABLE: [&str; 7] = [
+    "fonts/geist-regular.otf",
+    "fonts/geist-italic.otf",
+    "fonts/geist-medium.otf",
+    "fonts/geist-semibold.otf",
+    "fonts/geist-bold.otf",
+    "fonts/geist-mono-regular.otf",
+    "fonts/geist-mono-bold.otf",
+];
 
 pub struct Faces {
     pub files: Vec<Vec<u8>>,
@@ -40,7 +49,13 @@ fn held(fetched: &[Option<Vec<u8>>]) -> bool {
 }
 
 pub async fn fetch(endpoint: &Endpoint) -> Faces {
-    let paths: Vec<&str> = SANS.iter().chain(&MONO).chain([&SYMBOLS]).copied().collect();
+    let paths: Vec<&str> = SANS
+        .iter()
+        .chain(&MONO)
+        .chain([&SYMBOLS])
+        .chain(&PICKABLE)
+        .copied()
+        .collect();
     let fetched = fetch_all(endpoint, &paths).await;
     let sans = held(&fetched[..SANS.len()]);
     let mono = held(&fetched[SANS.len()..SANS.len() + MONO.len()]);

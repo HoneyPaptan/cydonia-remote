@@ -31,12 +31,18 @@ include!(concat!(env!("OUT_DIR"), "/prepared.rs"));
 /// The faces gpui-web resolves its defaults to: `.SystemUIFont` and `.ZedSans`
 /// to IBM Plex Sans, `.ZedMono` to Lilex. The browser has no system fonts, and
 /// text drawn outside the theme — a drag preview — asks for these by name.
-const FONTS: [&[u8]; 5] = [
+const FONTS: [&[u8]; 11] = [
     include_bytes!("../assets/fonts/IBMPlexSans-Regular.ttf"),
     include_bytes!("../assets/fonts/IBMPlexSans-SemiBold.ttf"),
     include_bytes!("../assets/fonts/IBMPlexSans-Italic.ttf"),
     include_bytes!("../assets/fonts/Lilex-Regular.ttf"),
     include_bytes!("../assets/fonts/Lilex-Bold.ttf"),
+    include_bytes!("../assets/fonts/Geist-Regular.otf"),
+    include_bytes!("../assets/fonts/Geist-Italic.otf"),
+    include_bytes!("../assets/fonts/Geist-SemiBold.otf"),
+    include_bytes!("../assets/fonts/Geist-Bold.otf"),
+    include_bytes!("../assets/fonts/GeistMono-Regular.otf"),
+    include_bytes!("../assets/fonts/GeistMono-Bold.otf"),
 ];
 
 /// Where the welcome project stands. Nothing is on a disk there: the path is
