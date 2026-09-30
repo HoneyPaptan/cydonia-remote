@@ -1,7 +1,4 @@
-use crate::view::{
-    leaf::Pane,
-    root::{Cydonia, ToggleChanges, narrow},
-};
+use crate::view::root::{Cydonia, ToggleChanges, narrow};
 use bezel::{
     gpui::{
         self, Context, DispatchPhase, IntoElement, LongPressEvent, Modifiers, MouseButton,
@@ -245,11 +242,7 @@ impl Cydonia {
     }
 
     fn keeps_the_right_panel_shut(&self, cx: &gpui::App) -> bool {
-        let document = matches!(
-            self.showing(cx),
-            Some(Pane::Article | Pane::Board | Pane::Table)
-        );
-        document && !self.sidebar_open
+        self.showing(cx).is_some() && !self.sidebar_open
     }
 
     fn settle_swipe(&mut self, window: &mut Window, cx: &mut Context<Self>) {

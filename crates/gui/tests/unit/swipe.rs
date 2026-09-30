@@ -128,6 +128,42 @@ fn swiping_left_over_an_article_leaves_the_right_panel_shut(cx: &mut gpui::TestA
     assert_eq!(open(&root, &mut visual), (false, false));
 }
 
+fn open_resting_session(root: &gpui::Entity<Cydonia>, visual: &mut gpui::VisualTestContext) {
+    let record = serde_json::from_value(serde_json::json!({
+        "id": "test", "agent": "test", "title": "", "name": null,
+        "updated": 1, "items": []
+    }))
+    .expect("a record");
+    root.update(visual, |root, cx| {
+        root.workspace.update(cx, |workspace, cx| {
+            let path = workspace.projects[0].path.clone();
+            let agent = crate::model::settings::Agent {
+                name: "test".into(),
+                id: None,
+                command: String::new(),
+                args: Vec::new(),
+                env: Default::default(),
+            };
+            let chat = crate::model::session::ChatSession::restore(7, path, agent, record);
+            workspace.projects[0].sessions.push(chat);
+            workspace.projects[0].active = Some(7);
+            cx.notify();
+        });
+    });
+}
+
+#[gpui::test]
+fn swiping_left_over_a_session_leaves_the_right_panel_shut(cx: &mut gpui::TestAppContext) {
+    let scratch = Scratch::new("panel-session");
+    let (root, mut visual) = open_bare_phone(&scratch, cx);
+    open_resting_session(&root, &mut visual);
+
+    pan(-200., 0., &mut visual);
+    assert_eq!(open(&root, &mut visual), (false, false));
+    pan_from(point(px(385.), px(400.)), -200., 0., &mut visual);
+    assert_eq!(open(&root, &mut visual), (false, false));
+}
+
 #[gpui::test]
 fn swiping_left_over_an_article_still_closes_the_sidebar(cx: &mut gpui::TestAppContext) {
     let scratch = Scratch::new("panel-article-drawer");
