@@ -596,6 +596,7 @@ impl Cydonia {
                 chat.map(|chat| chat.draft.clone()).unwrap_or_default(),
                 placeholder,
                 chat.map(|chat| chat.commands.clone()).unwrap_or_default(),
+                chat.map(|chat| chat.cwd.clone()),
                 chat.is_some_and(|chat| chat.streaming),
                 chat.and_then(composer::Activity::of),
                 current,
@@ -604,12 +605,13 @@ impl Cydonia {
             ));
         }
         for (leaf, point) in self.leaves.iter().zip(pointed) {
-            let (session, draft, placeholder, commands, streaming, activity, current, sw, usage) =
+            let (session, draft, placeholder, commands, project, streaming, activity, current, sw, usage) =
                 point;
             leaf.composer.update(cx, |composer, cx| {
                 composer.set_session(session, &draft, cx);
                 composer.set_placeholder(&placeholder, cx);
                 composer.set_commands(&commands, cx);
+                composer.set_project(project);
                 composer.set_streaming(streaming, cx);
                 composer.set_activity(activity, cx);
                 composer.set_agents(&agents, current, cx);

@@ -25,6 +25,7 @@ fn view(agent: &str) -> SessionView {
             usage: None,
             config: Vec::new(),
             modes: None,
+            commands: Vec::new(),
         },
         items: vec![
             ChatItem::User("go".into()),

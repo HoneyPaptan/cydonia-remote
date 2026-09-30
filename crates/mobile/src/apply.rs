@@ -2,7 +2,7 @@ use crate::seed;
 use artifact::project::Project as _;
 use bezel::gpui::Context;
 use gui::model::{
-    session::{ChatSession, Choice, Connection, PermissionPrompt, Usage},
+    session::{ChatSession, Choice, Command, Connection, PermissionPrompt, Usage},
     store, switches,
     workspace::Workspace,
 };
@@ -58,6 +58,14 @@ pub fn header(chat: &mut ChatSession, header: &SessionHeader) {
     chat.permission = header.permission.as_ref().map(prompt);
     chat.config = header.config.clone();
     chat.modes = header.modes.clone();
+    chat.commands = header
+        .commands
+        .iter()
+        .map(|command| Command {
+            name: command.name.clone(),
+            description: command.description.clone(),
+        })
+        .collect();
     chat.usage = header.usage.map(|usage| Usage {
         used: usage.used,
         size: usage.size,

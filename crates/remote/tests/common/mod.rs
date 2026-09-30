@@ -23,6 +23,7 @@ pub fn header(status: Status) -> SessionHeader {
         usage: None,
         config: Vec::new(),
         modes: None,
+        commands: Vec::new(),
     }
 }
 

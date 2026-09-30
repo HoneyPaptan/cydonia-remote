@@ -23,6 +23,7 @@ fn header(status: Status) -> SessionHeader {
         }),
         config: Vec::new(),
         modes: None,
+        commands: Vec::new(),
     }
 }
 

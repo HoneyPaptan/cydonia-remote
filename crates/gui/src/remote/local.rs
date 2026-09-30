@@ -243,6 +243,12 @@ impl Local for Laptop {
                     agents: crate::agent::catalogue(),
                 };
             }
+            Query::Mentions { project } => {
+                return match self.inside(Path::new(project)) {
+                    Some(project) => Answer::Mentions(crate::model::mentions::of(&project)),
+                    None => failed("Outside every open project"),
+                };
+            }
             Query::ReadDir { path } | Query::ReadFile { path } | Query::WriteFile { path, .. } => {
                 path
             }
@@ -257,7 +263,9 @@ impl Local for Laptop {
             Query::ReadFile { .. } => read_file(&path),
             Query::WriteFile { text, .. } => write_file(&path, text),
             Query::Git { args, .. } => run_git(&path, args),
-            Query::Agents | Query::Folders { .. } | Query::MakeFolder { .. } => failed("Not a path"),
+            Query::Agents | Query::Mentions { .. } | Query::Folders { .. } | Query::MakeFolder { .. } => {
+                failed("Not a path")
+            }
         }
     }
 

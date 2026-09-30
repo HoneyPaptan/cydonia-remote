@@ -4,7 +4,7 @@ use crate::model::{
 };
 use artifact::{article::properties, project::Project as _, session::chat::ChatItem};
 use remote::proto::{
-    File, PermissionOption, PermissionView, SessionHeader, SessionView, Status, Usage,
+    CommandView, File, PermissionOption, PermissionView, SessionHeader, SessionView, Status, Usage,
 };
 use std::{collections::BTreeMap, time::UNIX_EPOCH};
 
@@ -101,6 +101,14 @@ pub fn header(chat: &ChatSession) -> SessionHeader {
             false => Vec::new(),
         },
         modes: chat.modes.clone().filter(|_| chat.live()),
+        commands: chat
+            .commands
+            .iter()
+            .map(|command| CommandView {
+                name: command.name.clone(),
+                description: command.description.clone(),
+            })
+            .collect(),
     }
 }
 

@@ -12,6 +12,7 @@ pub mod language;
 #[cfg(feature = "desktop")]
 pub mod link;
 pub mod media;
+pub mod mentions;
 pub mod migrate;
 pub mod notify;
 pub mod pick;

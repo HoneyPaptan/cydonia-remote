@@ -11,6 +11,7 @@ use crate::{
         pick,
         pictures::Fit,
         session::{Command, Usage},
+        mentions,
     },
     view::root,
 };
@@ -32,7 +33,7 @@ use bezel::{
         widgets::{Buttons as _, Controls as _},
     },
 };
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 actions!(
     cydonia_composer,
@@ -57,6 +58,62 @@ const WARN_AT: f32 = 0.8;
 /// catalog would otherwise open a card taller than the window and off the top
 /// of it.
 const PICKER_HEIGHT: f32 = 320.;
+
+const PICKER_ROWS: usize = 80;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Sigil {
+    Slash,
+    Dollar,
+    At,
+}
+
+impl Sigil {
+    const ALL: [Sigil; 3] = [Sigil::Slash, Sigil::Dollar, Sigil::At];
+
+    fn mark(self) -> char {
+        match self {
+            Sigil::Slash => '/',
+            Sigil::Dollar => '$',
+            Sigil::At => '@',
+        }
+    }
+
+    fn slot(self) -> usize {
+        self as usize
+    }
+
+    fn of(mark: char) -> Option<Self> {
+        Self::ALL.into_iter().find(|sigil| sigil.mark() == mark)
+    }
+}
+
+struct Pick {
+    rows: Vec<Command>,
+    filter: popover::Filter,
+}
+
+impl Pick {
+    fn new(sigil: Sigil, rows: Vec<Command>) -> Self {
+        let filter = popover::Filter::new(
+            rows.iter()
+                .map(|row| SharedString::from(format!("{}{}", sigil.mark(), row.name)))
+                .collect(),
+        );
+        Self { rows, filter }
+    }
+}
+
+fn typed_token(content: &str, caret: usize) -> Option<(Sigil, usize)> {
+    let head = content.get(..caret)?;
+    let start = head
+        .char_indices()
+        .rev()
+        .find(|(_, c)| c.is_whitespace())
+        .map_or(0, |(at, c)| at + c.len_utf8());
+    let sigil = Sigil::of(head[start..].chars().next()?)?;
+    (sigil != Sigil::Slash || start == 0).then_some((sigil, start))
+}
 
 /// The most options a switch drops as a submenu. A menu panel has no height
 /// cap of its own, so a longer list — a catalog of models — opens as a flat
@@ -266,11 +323,9 @@ pub struct Composer {
     /// Derived from the text on every change rather than stored as a flag: a
     /// backspace over the `/` has to close the picker, and a flag would have to
     /// be told.
-    command: Option<usize>,
-    filter: popover::Filter,
-    /// The commands as the agent described them, in the filter's own order —
-    /// a row's second line is `commands[item].description`.
-    commands: Vec<Command>,
+    command: Option<(Sigil, usize)>,
+    picks: [Pick; 3],
+    project: Option<PathBuf>,
     /// Where the picker's list sits, since the card clamps at
     /// [`PICKER_HEIGHT`]: arrowing past the last visible row has to bring
     /// the row it landed on back into view.
@@ -349,8 +404,8 @@ impl Composer {
             saved_quotes: HashMap::new(),
             preview: None,
             command: None,
-            filter: popover::Filter::new(Vec::new()),
-            commands: Vec::new(),
+            picks: Sigil::ALL.map(|sigil| Pick::new(sigil, Vec::new())),
+            project: None,
             scroll: ScrollHandle::new(),
             streaming: false,
             activity: None,
@@ -433,18 +488,69 @@ impl Composer {
     /// descriptions are held beside the filter rather than in it: the filter
     /// ranks names, and a picker row is the name with its sentence under it.
     pub fn set_commands(&mut self, commands: &[Command], cx: &mut Context<Self>) {
-        if self.commands == commands {
+        if self.picks[Sigil::Slash.slot()].rows == commands {
             return;
         }
-        self.commands = commands.to_vec();
-        self.filter = popover::Filter::new(
-            commands
-                .iter()
-                .map(|command| SharedString::from(format!("/{}", command.name)))
-                .collect(),
-        );
+        self.picks[Sigil::Slash.slot()] = Pick::new(Sigil::Slash, commands.to_vec());
         self.command = None;
         cx.notify();
+    }
+
+    pub fn set_project(&mut self, project: Option<PathBuf>) {
+        self.project = project;
+    }
+
+    fn refresh_open(&mut self, cx: &mut Context<Self>) {
+        let Some((sigil, start)) = self.command.filter(|(sigil, _)| *sigil != Sigil::Slash) else {
+            return;
+        };
+        if !self.refresh_mentions(sigil) {
+            return;
+        }
+        let content = self.field.read(cx).content().clone();
+        let caret = self.field.read(cx).cursor().min(content.len());
+        if let Some(query) = content.get(start + 1..caret) {
+            self.picks[sigil.slot()].filter.refilter(query);
+        }
+    }
+
+    fn refresh_mentions(&mut self, sigil: Sigil) -> bool {
+        let Some(project) = self.project.as_deref() else {
+            return false;
+        };
+        let found = mentions::of(project);
+        let rows: Vec<Command> = match sigil {
+            Sigil::Slash => return false,
+            Sigil::Dollar => found
+                .skills
+                .into_iter()
+                .map(|skill| Command {
+                    name: skill.name,
+                    description: skill.description,
+                })
+                .collect(),
+            Sigil::At => found
+                .files
+                .into_iter()
+                .map(|file| Command {
+                    name: file,
+                    description: String::new(),
+                })
+                .collect(),
+        };
+        if self.picks[sigil.slot()].rows == rows {
+            return false;
+        }
+        self.picks[sigil.slot()] = Pick::new(sigil, rows);
+        true
+    }
+
+    fn current(&self) -> Option<&Pick> {
+        self.command.map(|(sigil, _)| &self.picks[sigil.slot()])
+    }
+
+    fn current_mut(&mut self) -> Option<&mut Pick> {
+        self.command.map(|(sigil, _)| &mut self.picks[sigil.slot()])
     }
 
     fn pick_attachments(&mut self, kind: pick::Kind, cx: &mut Context<Self>) {
@@ -722,15 +828,11 @@ impl Composer {
     fn reread(&mut self, cx: &mut Context<Self>) {
         let content = self.field.read(cx).content().clone();
         let caret = self.field.read(cx).cursor().min(content.len());
-        self.command = content
-            .starts_with('/')
-            .then_some(0)
-            .filter(|_| !self.filter.items().is_empty())
-            .filter(|_| !content[1..caret].contains(char::is_whitespace));
-        if self.command.is_some() {
-            self.filter.refilter(&content[1..caret]);
-            // Narrowing re-enters the list at the top, and the view it is read
-            // through has to go back with it.
+        self.command = typed_token(&content, caret);
+        if let Some((sigil, start)) = self.command {
+            self.refresh_mentions(sigil);
+            let query = &content[start + 1..caret];
+            self.picks[sigil.slot()].filter.refilter(query);
             self.reveal();
         }
         cx.notify();
@@ -740,10 +842,14 @@ impl Composer {
     fn accept(&mut self, item: usize, cx: &mut Context<Self>) {
         let content = self.field.read(cx).content().clone();
         let caret = self.field.read(cx).cursor().min(content.len());
-        let picked = format!("{} ", self.filter.items()[item]);
+        let Some((sigil, start)) = self.command else {
+            return;
+        };
+        let picked = format!("{} ", self.picks[sigil.slot()].filter.items()[item]);
+        let before = content[..start].to_string();
         let rest = content[caret..].to_string();
         self.field
-            .update(cx, |field, cx| field.set_content(picked + &rest, cx));
+            .update(cx, |field, cx| field.set_content(before + &picked + &rest, cx));
         self.command = None;
         cx.notify();
     }
@@ -751,9 +857,7 @@ impl Composer {
     pub fn submit(&mut self, cx: &mut Context<Self>) {
         // `enter` is one key doing two jobs: while the picker is up it takes
         // the highlighted row, exactly as the combobox's does.
-        if self.command.is_some()
-            && let Some(item) = self.filter.active_item()
-        {
+        if let Some(item) = self.current().and_then(|pick| pick.filter.active_item()) {
             self.accept(item, cx);
             return;
         }
@@ -775,13 +879,17 @@ impl Composer {
     }
 
     fn command_next(&mut self, _: &CommandNext, _: &mut Window, cx: &mut Context<Self>) {
-        self.filter.step(1);
+        if let Some(pick) = self.current_mut() {
+            pick.filter.step(1);
+        }
         self.reveal();
         cx.notify();
     }
 
     fn command_previous(&mut self, _: &CommandPrevious, _: &mut Window, cx: &mut Context<Self>) {
-        self.filter.step(-1);
+        if let Some(pick) = self.current_mut() {
+            pick.filter.step(-1);
+        }
         self.reveal();
         cx.notify();
     }
@@ -790,7 +898,7 @@ impl Composer {
     /// children are the filtered rows one for one, so the position the filter
     /// reports is the child gpui indexes.
     fn reveal(&self) {
-        if let Some(active) = self.filter.active() {
+        if let Some(active) = self.current().and_then(|pick| pick.filter.active()) {
             self.scroll.scroll_to_item(active);
         }
     }
@@ -824,16 +932,15 @@ impl Composer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        self.command?;
-        let items: Vec<Item> = self
+        let pick = self.current()?;
+        let items: Vec<Item> = pick
             .filter
             .filtered()
             .iter()
+            .take(PICKER_ROWS)
             .map(|&item| {
-                let row = Item::action(self.filter.items()[item].clone());
-                // An agent is free to send an empty one, and a blank second
-                // line would read as a gap rather than as a description.
-                match self.commands[item].description.trim() {
+                let row = Item::action(pick.filter.items()[item].clone());
+                match pick.rows[item].description.trim() {
                     "" => row,
                     description => row.with_description(description.to_string()),
                 }
@@ -846,12 +953,12 @@ impl Composer {
         // and the card does not — so the cursor is made from it each frame
         // rather than kept beside it, where the two could disagree.
         let mut cursor = Cursor::default();
-        if let Some(active) = self.filter.active() {
+        if let Some(active) = pick.filter.active().filter(|active| *active < items.len()) {
             cursor.point_at(&items, &[active]);
         }
         // The card reports the row it was on; the commands behind those rows
         // are whatever the query left standing.
-        let filtered = self.filter.filtered().to_vec();
+        let filtered = pick.filter.filtered().to_vec();
         Some(popover::anchored_menu_above(
             "composer-commands",
             div()
@@ -869,7 +976,9 @@ impl Composer {
                             // Enter always takes the row that is lit.
                             Hit::Point(path) => {
                                 if let [row] = path[..] {
-                                    composer.filter.set_active(row);
+                                    if let Some(pick) = composer.current_mut() {
+                                        pick.filter.set_active(row);
+                                    }
                                     cx.notify();
                                 }
                             }
@@ -1372,6 +1481,7 @@ impl Composer {
 
     fn body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx).clone();
+        self.refresh_open(cx);
         let picker = self.picker(&theme, window, cx);
         let tray = self.tray(&theme, cx);
         let radius = px(root::composer_height() / 2.);

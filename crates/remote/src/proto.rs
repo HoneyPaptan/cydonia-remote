@@ -91,6 +91,20 @@ pub struct SessionHeader {
     pub config: Vec<SessionConfigOption>,
     #[serde(default)]
     pub modes: Option<SessionModeState>,
+    #[serde(default)]
+    pub commands: Vec<CommandView>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommandView {
+    pub name: String,
+    pub description: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Mentions {
+    pub files: Vec<String>,
+    pub skills: Vec<CommandView>,
 }
 
 fn indexed<'de, D: Deserializer<'de>>(from: D) -> Result<BTreeMap<usize, u64>, D::Error> {
@@ -391,6 +405,7 @@ pub enum Query {
     Agents,
     Folders { path: String },
     MakeFolder { path: String },
+    Mentions { project: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -402,6 +417,7 @@ pub enum Answer {
     Output(Output),
     Agents { agents: Vec<AgentListing> },
     Folders(Folders),
+    Mentions(Mentions),
     Failed { message: String },
 }
 
