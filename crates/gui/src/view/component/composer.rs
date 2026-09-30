@@ -20,7 +20,7 @@ use bezel::ui::scroll as scrollbars;
 use bezel::{
     gpui::{
         self, AnyElement, App, ClipboardEntry, Context, Entity, EventEmitter, ExternalPaths,
-        FocusHandle, Focusable, KeyBinding, Pixels, Render, ScrollHandle, SharedString, Window,
+        FocusHandle, Focusable, Hsla, KeyBinding, Pixels, Render, ScrollHandle, SharedString, Window,
         actions, div, img, prelude::*, px,
     },
     theme::{Glass, SurfaceStyle, TextStyle, Theme, Typeset},
@@ -128,7 +128,6 @@ const SUBMENU_ROWS: usize = 12;
 
 /// The side of a picture waiting in the composer.
 const THUMB: f32 = 64.;
-const THUMB_RADIUS: f32 = 8.;
 const DOCUMENT_WIDTH: f32 = 160.;
 
 /// The side of a thumb's remove button, which sits centred on its corner.
@@ -160,7 +159,7 @@ fn document_face(theme: &Theme, ix: usize, name: String) -> gpui::Stateful<gpui:
     div()
         .id(("composer-document", ix))
         .size_full()
-        .rounded(px(THUMB_RADIUS))
+        .rounded(px(Theme::button_radius()))
         .bg(theme.surface_raised)
         .px(px(10.))
         .flex()
@@ -764,7 +763,7 @@ impl Composer {
             return None;
         }
         let thumbs = self.attachments.iter().enumerate().map(|(ix, attachment)| {
-            let shown = picture(attachment, Fit::Cover, THUMB_RADIUS, |shown| shown.size_full());
+            let shown = picture(attachment, Fit::Cover, Theme::button_radius(), |shown| shown.size_full());
             let width = match shown {
                 Some(_) => THUMB,
                 None => DOCUMENT_WIDTH,
@@ -773,7 +772,7 @@ impl Composer {
                 Some(picture) => div()
                     .id(("composer-attachment", ix))
                     .size_full()
-                    .rounded(px(THUMB_RADIUS))
+                    .rounded(px(Theme::button_radius()))
                     .overflow_hidden()
                     .cursor_pointer()
                     .on_click(cx.listener(move |composer, _, _, cx| {
@@ -797,7 +796,7 @@ impl Composer {
                         .top_0()
                         .left_0()
                         .size_full()
-                        .rounded(px(THUMB_RADIUS))
+                        .rounded(px(Theme::button_radius()))
                         .border_1()
                         .border_color(theme.border),
                 ))
@@ -1362,60 +1361,76 @@ impl Composer {
         .into_any_element()
     }
 
-    /// Show Send only for a draft; keep Stop available throughout a turn.
     fn button(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let streaming = self.streaming;
-        if !streaming && self.is_empty(cx) {
+        let draft = !self.is_empty(cx);
+        let stop = self.streaming.then(|| self.stop_button(theme, draft, cx));
+        let send = draft.then(|| self.send_button(theme, cx));
+        if stop.is_none() && send.is_none() {
             return None;
         }
-        let glyph = if streaming {
-            div()
-                .size(px(root::composer_disc() / 3.))
-                .rounded(px(2.))
-                .bg(theme.on_solid)
-                .into_any_element()
-        } else {
-            icons::icon(icons::arrows::ArrowUp)
-                .size(px(root::composer_disc() / 2.))
-                .text_color(theme.on_solid)
-                .into_any_element()
-        };
-        let disc = div()
-            .flex_none()
-            .size(px(root::composer_disc()))
-            .rounded_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(theme.solid)
-            .cursor_pointer()
-            .hover(|s| s.opacity(0.9))
-            .child(glyph);
         Some(
             div()
-                .id("composer-send")
+                .flex()
+                .flex_row()
                 .flex_none()
-                .tooltip(move |window, cx| {
-                    Tooltip::text(
-                        if streaming {
-                            "Stop response"
-                        } else {
-                            "Send message (Enter)"
-                        },
-                        window,
-                        cx,
-                    )
-                })
-                .on_click(cx.listener(|composer, _, _, cx| {
-                    if composer.streaming {
-                        cx.emit(ComposerEvent::Cancel);
-                    } else {
-                        composer.submit(cx);
-                    }
-                }))
-                .child(disc)
+                .gap(px(root::COMPOSER_INSET))
+                .children(stop)
+                .children(send)
                 .into_any_element(),
         )
+    }
+
+    fn round_button(
+        id: &'static str,
+        tip: &'static str,
+        background: Hsla,
+        glyph: AnyElement,
+    ) -> gpui::Stateful<gpui::Div> {
+        div()
+            .id(id)
+            .flex_none()
+            .tooltip(move |window, cx| Tooltip::text(tip, window, cx))
+            .child(
+                div()
+                    .size(px(root::composer_disc()))
+                    .rounded_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .bg(background)
+                    .cursor_pointer()
+                    .hover(|s| s.opacity(0.9))
+                    .child(glyph),
+            )
+    }
+
+    fn stop_button(&self, theme: &Theme, beside_send: bool, cx: &mut Context<Self>) -> AnyElement {
+        let (background, ink) = match beside_send {
+            true => (theme.element_hover, theme.text_muted),
+            false => (theme.solid, theme.on_solid),
+        };
+        let glyph = div()
+            .size(px(root::composer_disc() / 3.))
+            .rounded(px(2.))
+            .bg(ink)
+            .into_any_element();
+        Self::round_button("composer-stop", "Stop response", background, glyph)
+            .on_click(cx.listener(|_, _, _, cx| cx.emit(ComposerEvent::Cancel)))
+            .into_any_element()
+    }
+
+    fn send_button(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+        let tip = match self.streaming {
+            true => "Queue message (Enter)",
+            false => "Send message (Enter)",
+        };
+        let glyph = icons::icon(icons::arrows::ArrowUp)
+            .size(px(root::composer_disc() / 2.))
+            .text_color(theme.on_solid)
+            .into_any_element();
+        Self::round_button("composer-send", tip, theme.solid, glyph)
+            .on_click(cx.listener(|composer, _, _, cx| composer.submit(cx)))
+            .into_any_element()
     }
 
     fn tools(&self, theme: &Theme, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
