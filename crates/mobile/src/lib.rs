@@ -18,3 +18,5 @@ mod keeper;
 mod pick;
 #[cfg(target_family = "wasm")]
 mod pictures;
+#[cfg(target_family = "wasm")]
+mod wallpaper;

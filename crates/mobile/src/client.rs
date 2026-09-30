@@ -501,6 +501,7 @@ async fn boot() -> Result<(), String> {
         seed::project(project);
     }
     let mut settings = seed::settings(&snapshot);
+    crate::wallpaper::install(&mut settings.appearance);
     let faces = fonts::fetch(&endpoint).await;
     faces.name_families(&mut settings.appearance);
     let state = seed::state(&snapshot);

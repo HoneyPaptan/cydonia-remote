@@ -708,6 +708,11 @@ impl Workspace {
         cx.notify();
     }
 
+    pub fn choose_background_bytes(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) {
+        backdrop::choose_bytes(bytes, cx);
+        cx.notify();
+    }
+
     pub fn clear_background(&mut self, cx: &mut Context<Self>) {
         backdrop::clear(cx);
         cx.notify();

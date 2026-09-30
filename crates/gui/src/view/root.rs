@@ -182,7 +182,7 @@ pub(crate) fn content_bg(theme: &Theme, cx: &App) -> Hsla {
 
 fn backdrop_layer(theme: &Theme, cx: &mut App) -> Option<AnyElement> {
     let light = theme.appearance == bezel::theme::Appearance::Light;
-    let art = backdrop::frame(light, cx)?;
+    let art = backdrop::present(light, cx)?;
     Some(
         div()
             .absolute()

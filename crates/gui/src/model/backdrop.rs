@@ -2,9 +2,10 @@ use crate::model::settings;
 use bezel::gpui::{App, Global, Hsla, RenderImage};
 use image::{Frame, Rgba, RgbaImage};
 use serde::{Deserialize, Serialize};
-use std::{path::PathBuf, sync::Arc};
+use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::Arc};
 
 const MAX_SIDE: u32 = 1600;
+const KEEPSAKE_QUALITY: u8 = 82;
 const SOURCE_FILE: &str = "source";
 const FOLDER: &str = "backdrop";
 
@@ -87,10 +88,23 @@ pub struct Source {
 }
 
 impl Source {
+    pub fn keepsake(&self) -> Option<Vec<u8>> {
+        let rgb = self.colors.iter().flat_map(|[r, g, b, _]| [*r, *g, *b]).collect();
+        let image = image::RgbImage::from_raw(self.width, self.height, rgb)?;
+        let mut bytes = Vec::new();
+        image
+            .write_with_encoder(image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, KEEPSAKE_QUALITY))
+            .ok()?;
+        Some(bytes)
+    }
+
     pub fn decode(bytes: &[u8]) -> Option<Self> {
-        let image = image::load_from_memory(bytes)
-            .ok()?
-            .thumbnail(MAX_SIDE, MAX_SIDE);
+        let image = image::load_from_memory(bytes).ok()?;
+        let image = if image.width().max(image.height()) > MAX_SIDE {
+            image.thumbnail(MAX_SIDE, MAX_SIDE)
+        } else {
+            image
+        };
         let lumas = image.to_luma8().into_raw();
         let rgba = image.to_rgba8();
         Some(Self {
@@ -210,6 +224,62 @@ fn artwork(mut image: RgbaImage) -> Arc<RenderImage> {
     Arc::new(RenderImage::new([Frame::new(image)]))
 }
 
+pub trait Vault {
+    fn image(&self) -> Option<Vec<u8>>;
+    fn keep_image(&self, bytes: &[u8]);
+    fn drop_image(&self);
+    fn keep_look(&self, effect: Effect, intensity: f32);
+}
+
+pub trait Stage {
+    fn show(&self, art: Option<Arc<RenderImage>>, opacity: f32, light: bool);
+}
+
+struct FileVault;
+
+impl Vault for FileVault {
+    fn image(&self) -> Option<Vec<u8>> {
+        std::fs::read(stored()?).ok()
+    }
+
+    fn keep_image(&self, bytes: &[u8]) {
+        let Some(folder) = folder() else {
+            return;
+        };
+        let _ = std::fs::create_dir_all(&folder);
+        let _ = std::fs::write(folder.join(SOURCE_FILE), bytes);
+    }
+
+    fn drop_image(&self) {
+        if let Some(path) = stored() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
+    fn keep_look(&self, _: Effect, _: f32) {}
+}
+
+thread_local! {
+    static VAULT: RefCell<Option<Rc<dyn Vault>>> = const { RefCell::new(None) };
+    static STAGE: RefCell<Option<Rc<dyn Stage>>> = const { RefCell::new(None) };
+}
+
+pub fn install_vault(vault: Rc<dyn Vault>) {
+    VAULT.with(|held| *held.borrow_mut() = Some(vault));
+}
+
+pub fn install_stage(stage: Rc<dyn Stage>) {
+    STAGE.with(|held| *held.borrow_mut() = Some(stage));
+}
+
+fn vault() -> Rc<dyn Vault> {
+    VAULT.with(|held| held.borrow().clone()).unwrap_or_else(|| Rc::new(FileVault))
+}
+
+fn stage() -> Option<Rc<dyn Stage>> {
+    STAGE.with(|held| held.borrow().clone())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Key {
     effect: Effect,
@@ -251,47 +321,52 @@ pub fn init(effect: Effect, intensity: f32, cx: &mut App) {
         ready: None,
         pending: None,
     });
-    if let Some(path) = stored().filter(|path| path.exists()) {
-        load(path, false, cx);
+    if let Some(bytes) = vault().image() {
+        decode_in_background(move || Some((Source::decode(&bytes)?, bytes)), false, cx);
     }
 }
 
 pub fn choose(path: PathBuf, cx: &mut App) {
-    load(path, true, cx);
+    decode_in_background(
+        move || {
+            let bytes = std::fs::read(&path).ok()?;
+            Some((Source::decode(&bytes)?, bytes))
+        },
+        true,
+        cx,
+    );
 }
 
-pub fn use_bytes(bytes: Vec<u8>, cx: &mut App) {
+pub fn choose_bytes(bytes: Vec<u8>, cx: &mut App) {
+    decode_in_background(
+        move || {
+            let source = Source::decode(&bytes)?;
+            let keepsake = source.keepsake()?;
+            Some((source, keepsake))
+        },
+        true,
+        cx,
+    );
+}
+
+fn decode_in_background(
+    work: impl FnOnce() -> Option<(Source, Vec<u8>)> + Send + 'static,
+    keep: bool,
+    cx: &mut App,
+) {
     cx.spawn(async move |cx| {
-        let source = cx
-            .background_executor()
-            .spawn(async move { Source::decode(&bytes).map(Arc::new) })
-            .await;
-        cx.update(|cx| adopt(source, cx));
+        let loaded = cx.background_executor().spawn(async move { work() }).await;
+        cx.update(|cx| {
+            let Some((source, bytes)) = loaded else {
+                return;
+            };
+            if keep {
+                vault().keep_image(&bytes);
+            }
+            adopt(Some(Arc::new(source)), cx);
+        });
     })
     .detach();
-}
-
-fn load(path: PathBuf, keep: bool, cx: &mut App) {
-    cx.spawn(async move |cx| {
-        let source = cx
-            .background_executor()
-            .spawn(async move {
-                let bytes = std::fs::read(&path).ok()?;
-                let source = Source::decode(&bytes).map(Arc::new)?;
-                if keep {
-                    persist(&bytes);
-                }
-                Some(source)
-            })
-            .await;
-        cx.update(|cx| adopt(source, cx));
-    })
-    .detach();
-}
-
-fn persist(bytes: &[u8]) -> Option<()> {
-    std::fs::create_dir_all(folder()?).ok()?;
-    std::fs::write(stored()?, bytes).ok()
 }
 
 fn adopt(source: Option<Arc<Source>>, cx: &mut App) {
@@ -306,9 +381,7 @@ fn adopt(source: Option<Arc<Source>>, cx: &mut App) {
 }
 
 pub fn clear(cx: &mut App) {
-    if let Some(path) = stored() {
-        let _ = std::fs::remove_file(path);
-    }
+    vault().drop_image();
     let held = cx.global_mut::<Backdrop>();
     held.source = None;
     held.ready = None;
@@ -317,12 +390,16 @@ pub fn clear(cx: &mut App) {
 }
 
 pub fn set_effect(effect: Effect, cx: &mut App) {
-    cx.global_mut::<Backdrop>().effect = effect;
+    let held = cx.global_mut::<Backdrop>();
+    held.effect = effect;
+    vault().keep_look(effect, held.intensity);
     cx.refresh_windows();
 }
 
 pub fn set_intensity(intensity: f32, cx: &mut App) {
-    cx.global_mut::<Backdrop>().intensity = clamp_intensity(intensity);
+    let held = cx.global_mut::<Backdrop>();
+    held.intensity = clamp_intensity(intensity);
+    vault().keep_look(held.effect, held.intensity);
     cx.refresh_windows();
 }
 
@@ -332,6 +409,9 @@ pub fn is_set(cx: &App) -> bool {
 }
 
 pub fn veil(base: Hsla, cx: &App) -> Option<Hsla> {
+    if stage().is_some() {
+        return None;
+    }
     let held = cx.try_global::<Backdrop>()?;
     held.source.as_ref()?;
     Some(Hsla {
@@ -340,7 +420,17 @@ pub fn veil(base: Hsla, cx: &App) -> Option<Hsla> {
     })
 }
 
-pub fn frame(light: bool, cx: &mut App) -> Option<Arc<RenderImage>> {
+pub fn present(light: bool, cx: &mut App) -> Option<Arc<RenderImage>> {
+    let art = frame(light, cx);
+    let Some(stage) = stage() else {
+        return art;
+    };
+    let opacity = cx.try_global::<Backdrop>().map_or(0., |held| held.intensity);
+    stage.show(art, opacity, light);
+    None
+}
+
+fn frame(light: bool, cx: &mut App) -> Option<Arc<RenderImage>> {
     let held = cx.try_global::<Backdrop>()?;
     let source = held.source.clone()?;
     let key = Key::new(held.effect, light);
@@ -432,5 +522,12 @@ mod tests {
         assert_eq!(clamp_intensity(f32::NAN), DEFAULT_INTENSITY);
         assert_eq!(clamp_intensity(5.0), INTENSITY.1);
         assert_eq!(clamp_intensity(-1.0), INTENSITY.0);
+    }
+
+    #[test]
+    fn a_keepsake_decodes_back_to_the_same_size() {
+        let kept = fixture().keepsake().expect("encodes");
+        let back = Source::decode(&kept).expect("decodes");
+        assert_eq!((back.width, back.height), (60, 32));
     }
 }

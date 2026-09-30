@@ -3,6 +3,7 @@
 use crate::{
     model::{
         backdrop::{self, Effect},
+        pick,
         workspace::Workspace,
     },
     view::settings::{self, SettingsWindow, Switch},
@@ -208,6 +209,34 @@ impl SettingsWindow {
     }
 
     fn choose_background(&mut self, cx: &mut Context<Self>) {
+        match pick::get() {
+            Some(picker) => self.choose_background_from(picker.pick(pick::Kind::Photos), cx),
+            None => self.choose_background_path(cx),
+        }
+    }
+
+    fn choose_background_from(
+        &mut self,
+        chosen: futures::channel::oneshot::Receiver<Vec<pick::Picked>>,
+        cx: &mut Context<Self>,
+    ) {
+        cx.spawn(async move |this, cx| {
+            let Ok(files) = chosen.await else {
+                return;
+            };
+            let Some(file) = files.into_iter().next() else {
+                return;
+            };
+            let _ = this.update(cx, |this, cx| {
+                this.workspace
+                    .update(cx, |workspace, cx| workspace.choose_background_bytes(file.bytes, cx));
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn choose_background_path(&mut self, cx: &mut Context<Self>) {
         let picked = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
