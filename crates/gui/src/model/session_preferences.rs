@@ -87,18 +87,24 @@ fn read(path: &Path) -> Result<Stored> {
     }
 }
 
+fn everywhere() -> &'static Path {
+    Path::new("")
+}
+
 pub fn load(cwd: &Path, agent: &Agent, session: Option<&str>) -> Choices {
     let stored = path().and_then(|path| read(&path)).unwrap_or_default();
-    let Some(agent) = stored
-        .get(cwd)
-        .and_then(|project| project.get(&agent_key(agent)))
-    else {
-        return Choices::default();
-    };
-    session
-        .and_then(|session| agent.sessions.get(session))
-        .unwrap_or(&agent.defaults)
-        .clone()
+    let key = agent_key(agent);
+    let of = |project: &Path| stored.get(project).and_then(|project| project.get(&key));
+    let here = of(cwd);
+    match session.and_then(|session| here.and_then(|agent| agent.sessions.get(session))) {
+        Some(session) => session.clone(),
+        None => of(everywhere())
+            .map(|agent| &agent.defaults)
+            .filter(|defaults| **defaults != Choices::default())
+            .or_else(|| here.map(|agent| &agent.defaults))
+            .cloned()
+            .unwrap_or_default(),
+    }
 }
 
 fn edit(cwd: &Path, agent: &Agent, change: impl FnOnce(&mut AgentChoices)) -> Result<()> {
@@ -127,7 +133,10 @@ fn edit(cwd: &Path, agent: &Agent, change: impl FnOnce(&mut AgentChoices)) -> Re
 }
 
 pub fn remember_mode(cwd: &Path, agent: &Agent, mode: &str) -> Result<()> {
-    edit(cwd, agent, |agent| agent.defaults.mode = Some(mode.into()))
+    for scope in [cwd, everywhere()] {
+        edit(scope, agent, |agent| agent.defaults.mode = Some(mode.into()))?;
+    }
+    Ok(())
 }
 
 pub fn remember_config(
@@ -136,9 +145,12 @@ pub fn remember_config(
     id: &str,
     value: SessionConfigOptionValue,
 ) -> Result<()> {
-    edit(cwd, agent, |agent| {
-        agent.defaults.config.insert(id.into(), value);
-    })
+    for scope in [cwd, everywhere()] {
+        edit(scope, agent, |agent| {
+            agent.defaults.config.insert(id.into(), value.clone());
+        })?;
+    }
+    Ok(())
 }
 
 pub fn remember_session(cwd: &Path, agent: &Agent, id: &str, choices: &Choices) -> Result<()> {
