@@ -5,11 +5,13 @@ use gpui::{App, Bounds, IntoElement, Pixels, Point, ScrollHandle, Styled, Window
 use crate::cover::{self, Mark};
 
 const GRIP_REACH: f32 = 12.;
+const SLIDER_REACH: f32 = 14.;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
     Sideways,
     Grip,
+    Slider,
     Pull,
     Scroll,
 }
@@ -40,6 +42,11 @@ pub fn grip() -> impl IntoElement {
     mark(Kind::Grip).top(reach).left(reach).right(reach).bottom(reach)
 }
 
+pub fn slider() -> impl IntoElement {
+    let reach = px(-SLIDER_REACH);
+    mark(Kind::Slider).top(reach).bottom(reach).left_0().right_0()
+}
+
 pub fn mark_pull(bounds: Bounds<Pixels>) {
     record(Kind::Pull, bounds);
 }
@@ -62,6 +69,10 @@ pub fn scrolls_sideways_at(position: Point<Pixels>, window: &Window, cx: &App) -
 
 pub fn grip_at(position: Point<Pixels>, window: &Window, cx: &App) -> Option<Point<Pixels>> {
     found(Kind::Grip, position, window, cx).map(|bounds| bounds.center())
+}
+
+pub fn slider_at(position: Point<Pixels>, window: &Window, cx: &App) -> bool {
+    found(Kind::Slider, position, window, cx).is_some()
 }
 
 fn record(kind: Kind, bounds: Bounds<Pixels>) {

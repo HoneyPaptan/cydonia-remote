@@ -164,7 +164,12 @@ impl Cydonia {
     fn follow_grip(&mut self, event: &TouchDragEvent, window: &mut Window, cx: &mut Context<Self>) {
         match event.phase {
             TouchPhase::Started => {
-                let Some(grip) = touch::grip_at(event.start_position, window, cx) else {
+                let Some(grip) = touch::grip_at(event.start_position, window, cx)
+                    .or_else(|| {
+                        touch::slider_at(event.start_position, window, cx)
+                            .then_some(event.start_position)
+                    })
+                else {
                     return;
                 };
                 window.prevent_default();

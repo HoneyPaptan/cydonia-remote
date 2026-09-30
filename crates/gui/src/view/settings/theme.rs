@@ -15,7 +15,10 @@ use bezel::{
         TextStyle, Theme, Tint, Typeset,
         appearance::{self, AppearanceMode},
     },
-    ui::widgets::{self, Controls, Scaffolding, SliderDrag},
+    ui::{
+        touch,
+        widgets::{self, Controls, Scaffolding, SliderDrag},
+    },
 };
 
 /// The tint's ceiling: Slate's chroma, the most coloured of the five neutrals
@@ -147,7 +150,7 @@ impl SettingsWindow {
                     .child(self.background_image_row(cx))
                     .child(self.background_effect_row(cx))
                     .child(self.background_strength_row(cx))
-            .child(self.background_blur_row(cx)),
+                    .child(self.background_blur_row(cx)),
             )
             .into_any_element()
     }
@@ -192,9 +195,8 @@ impl SettingsWindow {
                     .flex_row()
                     .gap(px(6.))
                     .child(
-                        button("background-choose", if set { "Change" } else { "Choose" }).on_click(
-                            cx.listener(|this, _, _, cx| this.choose_background(cx)),
-                        ),
+                        button("background-choose", if set { "Change" } else { "Choose" })
+                            .on_click(cx.listener(|this, _, _, cx| this.choose_background(cx))),
                     )
                     .children(set.then(|| {
                         button("background-remove", "Remove").on_click(cx.listener(
@@ -229,8 +231,9 @@ impl SettingsWindow {
                 return;
             };
             let _ = this.update(cx, |this, cx| {
-                this.workspace
-                    .update(cx, |workspace, cx| workspace.choose_background_bytes(file.bytes, cx));
+                this.workspace.update(cx, |workspace, cx| {
+                    workspace.choose_background_bytes(file.bytes, cx)
+                });
                 cx.notify();
             });
         })
@@ -262,7 +265,12 @@ impl SettingsWindow {
 
     fn background_effect_row(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::of(cx).clone();
-        let current = self.workspace.read(cx).settings.appearance.background_effect;
+        let current = self
+            .workspace
+            .read(cx)
+            .settings
+            .appearance
+            .background_effect;
         theme
             .card_row(false)
             .child(div().flex_1().min_w_0().child(theme.row_title("Effect")))
@@ -297,7 +305,12 @@ impl SettingsWindow {
 
     fn background_strength_row(&self, cx: &mut Context<Self>) -> AnyElement {
         let (low, high) = backdrop::INTENSITY;
-        let strength = self.workspace.read(cx).settings.appearance.background_intensity;
+        let strength = self
+            .workspace
+            .read(cx)
+            .settings
+            .appearance
+            .background_intensity;
         self.tint_row(
             "background-strength",
             "Strength",
@@ -683,7 +696,9 @@ impl SettingsWindow {
                     .id(id)
                     .flex_none()
                     .w(px(SLIDER_WIDTH))
+                    .relative()
                     .child(theme.slider(fraction))
+                    .child(touch::slider())
                     .on_drag(SliderDrag(id.into()), |_, _, _, cx| cx.new(|_| Empty))
                     .on_drag_move(cx.listener(
                         move |this, event: &DragMoveEvent<SliderDrag>, _, cx| {
