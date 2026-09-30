@@ -153,7 +153,30 @@
 			const coarse = matchMedia('(pointer: coarse)').matches;
 			const scale = coarse ? 1.25 : 1;
 			window.cydoniaScale = scale;
+			window.cydoniaTouch = coarse;
 			if (coarse) scaleTheInterface(scale);
+
+			const KEYBOARD_MIN_HEIGHT = 120;
+
+			function fitCanvasAboveKeyboard() {
+				const canvas = document.querySelector('body > canvas');
+				const viewport = window.visualViewport;
+				if (!canvas || !viewport) return;
+				const covered = document.documentElement.clientHeight - viewport.height;
+				if (covered < KEYBOARD_MIN_HEIGHT) {
+					canvas.style.removeProperty('top');
+					canvas.style.removeProperty('bottom');
+					canvas.style.removeProperty('height');
+					return;
+				}
+				canvas.style.top = viewport.offsetTop + 'px';
+				canvas.style.bottom = 'auto';
+				canvas.style.height = viewport.height + 'px';
+			}
+			if (coarse && window.visualViewport) {
+				window.visualViewport.addEventListener('resize', fitCanvasAboveKeyboard);
+				window.visualViewport.addEventListener('scroll', fitCanvasAboveKeyboard);
+			}
 
 			const TOUCH_SLOP = 8;
 			const HEADER_BAND = 72;
