@@ -1,6 +1,6 @@
 use crate::view::{
     component::panel::Launch,
-    root::{Cydonia, NewArticle, NewBoard, NewSession, OpenProject, content_bg, narrow},
+    root::{Cydonia, NewArticle, NewBoard, NewSession, OpenProject, narrow},
 };
 use bezel::{
     gpui::{self, AnyElement, Context, Window, div, prelude::*, px},
@@ -352,7 +352,8 @@ impl Cydonia {
                         .pt(px(12.))
                         .pb(px(24.))
                         .rounded_t(px(16.))
-                        .bg(content_bg(&theme))
+                        .occlude()
+                        .bg(theme.bg)
                         .on_click(|_, _, cx| cx.stop_propagation())
                         .child(
                             div()
