@@ -143,11 +143,16 @@ async fn call(State(server): State<Arc<Server>>, headers: HeaderMap, body: Strin
     let Ok(request) = serde_json::from_str::<Request>(&body) else {
         return (StatusCode::BAD_REQUEST, "not a JSON-RPC request").into_response();
     };
-    match server.handle_from(&request, at.as_deref(), session.as_deref()) {
-        Some(response) => axum::Json(response).into_response(),
+    let handled = tokio::task::spawn_blocking(move || {
+        server.handle_from(&request, at.as_deref(), session.as_deref())
+    })
+    .await;
+    match handled {
+        Ok(Some(response)) => axum::Json(response).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         // A notification is answered by not answering, which over HTTP is the
         // status that says so.
-        None => StatusCode::ACCEPTED.into_response(),
+        Ok(None) => StatusCode::ACCEPTED.into_response(),
     }
 }
 

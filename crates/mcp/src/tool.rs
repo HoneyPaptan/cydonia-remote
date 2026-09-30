@@ -159,6 +159,22 @@ impl<'a> Args<'a> {
         self.arguments.get(arg.name).and_then(Value::as_str)
     }
 
+    pub fn seconds(&self, arg: Arg) -> Result<Option<u64>, Trouble> {
+        match self.arguments.get(arg.name) {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::Number(number)) => number
+                .as_u64()
+                .map(Some)
+                .ok_or_else(|| Trouble::Invalid(format!("{} must be a whole number", arg.name))),
+            Some(Value::String(text)) => text
+                .trim()
+                .parse()
+                .map(Some)
+                .map_err(|_| Trouble::Invalid(format!("{} must be a whole number", arg.name))),
+            Some(_) => Err(Trouble::Invalid(format!("{} must be a whole number", arg.name))),
+        }
+    }
+
     pub fn boolean(&self, arg: Arg, default: bool) -> Result<bool, Trouble> {
         match self.arguments.get(arg.name) {
             None => Ok(default),

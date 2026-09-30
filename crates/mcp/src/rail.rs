@@ -19,6 +19,7 @@
 #[cfg(feature = "http")]
 use crate::tool::Trouble;
 use std::{
+    collections::BTreeMap,
     path::{Path, PathBuf},
     sync::RwLock,
 };
@@ -82,6 +83,10 @@ static OPEN: RwLock<Vec<PathBuf>> = RwLock::new(Vec::new());
 /// The agents configured, as the app last pushed them.
 static AGENTS: RwLock<Vec<Agent>> = RwLock::new(Vec::new());
 
+/// What each session is doing, keyed by record id, as the app last pushed it.
+/// A session that is doing nothing has no key.
+static ACTIVITY: RwLock<BTreeMap<String, Activity>> = RwLock::new(BTreeMap::new());
+
 /// The entries on screen, as the window last pushed them.
 static SHOWN: RwLock<Vec<Shown>> = RwLock::new(Vec::new());
 
@@ -90,6 +95,28 @@ pub fn install(hand: impl Fn(Change) + Send + Sync + 'static) {
     if let Ok(mut held) = HAND.write() {
         *held = Some(Box::new(hand));
     }
+}
+
+/// What a session that is not idle is doing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Activity {
+    /// Starting up, answering, or working through a queue of prompts.
+    Working,
+    /// Stopped on a permission prompt that only a person can answer.
+    Asking,
+}
+
+/// Say what every busy session is doing. Pushed by the app on a timer, since
+/// no window render happens under the headless host.
+pub fn set_activity(activity: BTreeMap<String, Activity>) {
+    if let Ok(mut held) = ACTIVITY.write() {
+        *held = activity;
+    }
+}
+
+/// What the session filed under `record` is doing, or nothing when idle.
+pub fn activity(record: &str) -> Option<Activity> {
+    ACTIVITY.read().ok()?.get(record).copied()
 }
 
 /// Say what is on the rail. Pushed by the app wherever the list is written

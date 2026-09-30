@@ -6,6 +6,8 @@
 //! names as the rest of it.
 use super::*;
 
+const RAIL_ACTIVITY_EVERY: std::time::Duration = std::time::Duration::from_millis(400);
+
 impl Workspace {
     /// The projects on the rail, in the order the sidebar lists them.
     pub(super) fn paths(&self) -> Vec<PathBuf> {
@@ -49,6 +51,39 @@ impl Workspace {
             }
         })
         .detach();
+        cx.spawn(async move |workspace, cx| {
+            loop {
+                let held = workspace
+                    .update(cx, |workspace, _| rail::set_activity(workspace.rail_activity()))
+                    .is_ok();
+                if !held {
+                    return;
+                }
+                cx.background_executor().timer(RAIL_ACTIVITY_EVERY).await;
+            }
+        })
+        .detach();
+    }
+
+    fn rail_activity(&self) -> std::collections::BTreeMap<String, rail::Activity> {
+        self.projects
+            .iter()
+            .flat_map(|project| project.sessions.iter())
+            .filter_map(|chat| {
+                let record = chat.record.clone()?;
+                let activity = match () {
+                    _ if chat.permission.is_some() => rail::Activity::Asking,
+                    _ if chat.streaming
+                        || matches!(chat.connection, crate::model::session::Connection::Connecting)
+                        || !chat.queue.is_empty() =>
+                    {
+                        rail::Activity::Working
+                    }
+                    _ => return None,
+                };
+                Some((record, activity))
+            })
+            .collect()
     }
 
     /// Put a project on the rail, or bring forward one already there.

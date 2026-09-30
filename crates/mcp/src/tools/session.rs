@@ -15,7 +15,12 @@ use artifact::{
     },
 };
 use serde_json::json;
-use std::{collections::BTreeMap, path::Path, sync::mpsc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+    sync::mpsc,
+    time::{Duration, Instant},
+};
 
 const SESSION: Arg = Arg {
     name: "session",
@@ -64,6 +69,28 @@ const FULL: Arg = Arg {
 default: each tool call is one line.",
 };
 
+const WAIT: Arg = Arg {
+    name: "wait",
+    about: "Seconds to wait, at most 600, for the session to finish its turn. \
+The answer then carries that turn, so a worker can be started and reviewed in \
+one call. Leave it out to return at once.",
+};
+
+/// The longest a call holds the connection open for a session.
+const LONGEST_WAIT: u64 = 600;
+
+/// How long a session just sent to has to show it is working before it is
+/// taken for having finished. A new one spawns its agent first.
+const START_GRACE: Duration = Duration::from_secs(20);
+
+/// How long a new session has to appear on disk after it is asked for.
+const APPEARS_WITHIN: Duration = Duration::from_secs(5);
+
+const POLL: Duration = Duration::from_millis(250);
+
+/// Time for the app to write a finished turn to disk before it is read.
+const FLUSHED: Duration = Duration::from_millis(600);
+
 /// Turns read when none are asked for.
 const LATEST: u64 = 3;
 
@@ -78,7 +105,10 @@ pub static TOOLS: [Tool; 3] = [
         name: "session_send",
         description: "Send a message to another agent session in the project, named by its entry \
         reference (#43), or start a new session on a named agent with the message as its first \
-        prompt. Fire and forget: nothing is waited for or answered back.",
+        prompt, and answer with its reference (#43). Give `wait` to hold the call until the \
+        session has finished its turn and get that turn back, which is how a worker is started \
+        and reviewed in one call; without it nothing is waited for. A session stopped on a \
+        permission prompt is reported as such.",
         schema: |bound| {
             let mut schema = fields(bound, &[PROJECT, SESSION, AGENT, MESSAGE]);
             let agents = rail::agents();
@@ -89,6 +119,7 @@ pub static TOOLS: [Tool; 3] = [
                     "description": format!("{} Configured: {}.", AGENT.about, listed(&agents)),
                 });
             }
+            schema["properties"][WAIT.name] = waiting();
             schema["required"] = json!(match bound {
                 true => vec![MESSAGE.name],
                 false => vec![PROJECT.name, MESSAGE.name],
@@ -103,13 +134,15 @@ pub static TOOLS: [Tool; 3] = [
         name: "session_read",
         description: "Read turns of a session by reference: #43:5-7, or the session and a \
             `turns` range. A turn is one message sent to the agent and everything it did in \
-            answer. Reads archived sessions too. Without turns, the last 3.",
+            answer. Reads archived sessions too. Without turns, the last 3. Says whether the \
+            session is still working, and with `wait` holds the call until it is not.",
         schema: |bound| {
             let mut schema = fields(bound, &[PROJECT, READ]);
             schema["properties"][TURNS.name] =
                 json!({ "type": "string", "description": TURNS.about });
             schema["properties"][FULL.name] =
                 json!({ "type": "boolean", "description": FULL.about });
+            schema["properties"][WAIT.name] = waiting();
             schema
         },
         writes: false,
@@ -151,8 +184,9 @@ fn send(args: Args<'_>) -> Outcome {
         None => message.to_owned(),
     };
     let message = signed.as_str();
+    let wait = args.seconds(WAIT)?;
     let Some(named) = args.maybe(SESSION) else {
-        return start(project, args.maybe(AGENT), message);
+        return start(&args, project, message, wait);
     };
     let number = artifact::entry::reference(named)
         .ok_or_else(|| Trouble::Invalid("session must be a reference such as #43".to_owned()))?;
@@ -171,7 +205,67 @@ fn send(args: Args<'_>) -> Outcome {
         session: entry.id.clone(),
         message: message.to_owned(),
     })?;
-    Ok(Answer::said(format!("sent to #{number} {}", entry.title)))
+    let sent = format!("sent to #{number} {}", entry.title);
+    answered(&args, sent, number, &entry.id, wait)
+}
+
+fn waiting() -> serde_json::Value {
+    json!({ "type": "integer", "minimum": 1, "maximum": LONGEST_WAIT, "description": WAIT.about })
+}
+
+fn how_long(wait: Option<u64>) -> Duration {
+    Duration::from_secs(wait.unwrap_or(0).min(LONGEST_WAIT))
+}
+
+enum Settled {
+    Idle,
+    Asking,
+    Working,
+}
+
+fn settle(record: &str, wait: Duration, fresh: bool) -> Settled {
+    let start = Instant::now();
+    let grace = match fresh {
+        true => START_GRACE,
+        false => Duration::ZERO,
+    };
+    let mut seen_working = false;
+    loop {
+        match rail::activity(record) {
+            Some(rail::Activity::Asking) => return Settled::Asking,
+            Some(rail::Activity::Working) => seen_working = true,
+            None if seen_working || start.elapsed() >= grace => return Settled::Idle,
+            None => {}
+        }
+        if start.elapsed() >= wait {
+            return Settled::Working;
+        }
+        std::thread::sleep(POLL);
+    }
+}
+
+fn answered(
+    args: &Args<'_>,
+    sent: String,
+    number: u64,
+    record: &str,
+    wait: Option<u64>,
+) -> Outcome {
+    let wait = how_long(wait);
+    if wait.is_zero() {
+        return Ok(Answer::said(sent).with(json!({ "session": number })));
+    }
+    let settled = settle(record, wait, true);
+    std::thread::sleep(FLUSHED);
+    let state = match settled {
+        Settled::Idle => "finished its turn",
+        Settled::Asking => "is stopped on a permission prompt that only a person can answer",
+        Settled::Working => "is still working, read it again with wait to keep waiting",
+    };
+    let reference = format!("#{number}");
+    let latest = read_turns(args, &reference, None, false)?;
+    Ok(Answer::said(format!("{sent}; it {state}\n\n{}", latest.text))
+        .with(json!({ "session": number, "finished": matches!(settled, Settled::Idle) })))
 }
 
 /// The calling session as a reference to the turn it is on — `#42:7`, or
@@ -194,9 +288,36 @@ fn same_dir(a: &Path, b: &Path) -> bool {
     settled(a) == settled(b)
 }
 
+fn session_numbers(project: &Path) -> BTreeSet<u64> {
+    artifact::entry::list(project)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|entry| entry.kind == "session")
+        .map(|entry| entry.number)
+        .collect()
+}
+
+fn appeared(project: &Path, before: &BTreeSet<u64>) -> Option<(u64, String)> {
+    let start = Instant::now();
+    loop {
+        let found = artifact::entry::list(project)
+            .unwrap_or_default()
+            .into_iter()
+            .find(|entry| entry.kind == "session" && !before.contains(&entry.number));
+        if let Some(entry) = found {
+            return Some((entry.number, entry.id));
+        }
+        if start.elapsed() >= APPEARS_WITHIN {
+            return None;
+        }
+        std::thread::sleep(POLL);
+    }
+}
+
 /// A new session on `agent`, seeded with `message`.
-fn start(project: &Path, agent: Option<&str>, message: &str) -> Outcome {
-    let named = agent
+fn start(args: &Args<'_>, project: &Path, message: &str, wait: Option<u64>) -> Outcome {
+    let named = args
+        .maybe(AGENT)
         .ok_or_else(|| Trouble::Invalid("session or agent is required, as a string".to_owned()))?;
     let agents = rail::agents();
     let agent = agents
@@ -216,15 +337,20 @@ fn start(project: &Path, agent: Option<&str>, message: &str) -> Outcome {
     let project = project
         .canonicalize()
         .unwrap_or_else(|_| project.to_path_buf());
+    let before = session_numbers(&project);
     rail::ask(Change::Start {
-        project,
+        project: project.clone(),
         agent: agent.key().to_owned(),
         message: message.to_owned(),
     })?;
-    Ok(Answer::said(format!(
-        "sent to a new session on {}",
-        agent.name
-    )))
+    let sent = format!("sent to a new session on {}", agent.name);
+    let Some((number, record)) = appeared(&project, &before) else {
+        return Ok(Answer::said(format!(
+            "{sent}; it has not appeared yet, find it with project_entries"
+        )));
+    };
+    let sent = format!("{sent}, #{number}");
+    answered(args, sent, number, &record, wait)
 }
 
 /// `Claude Agent (claude-acp), Codex (codex-acp)`.
@@ -287,8 +413,18 @@ fn found(args: &Args<'_>, named: &str) -> Result<Found, Trouble> {
 fn read(args: Args<'_>) -> Outcome {
     let named = args.text(READ)?;
     let full = args.boolean(FULL, false)?;
-    let found = found(&args, named)?;
-    let asked = match args.maybe(TURNS) {
+    let wait = how_long(args.seconds(WAIT)?);
+    if !wait.is_zero() {
+        let record = found(&args, named)?.record.id;
+        settle(&record, wait, false);
+        std::thread::sleep(FLUSHED);
+    }
+    read_turns(&args, named, args.maybe(TURNS), full)
+}
+
+fn read_turns(args: &Args<'_>, named: &str, turns: Option<&str>, full: bool) -> Outcome {
+    let found = found(args, named)?;
+    let asked = match turns {
         Some(turns) => Some(range(turns)?),
         None => found.turns,
     };
@@ -316,6 +452,11 @@ fn read(args: Args<'_>) -> Outcome {
     };
     let number = found.number;
     let mut text = format!("#{number} {} — turns {run} of {count}", found.title);
+    match rail::activity(&found.record.id) {
+        Some(rail::Activity::Working) => text.push_str(" (working now)"),
+        Some(rail::Activity::Asking) => text.push_str(" (stopped on a permission prompt)"),
+        None => {}
+    }
     for turn in run.from..=run.to {
         let items = &found.record.items[turns[turn as usize - 1].clone()];
         text.push_str(&format!("\n\n## #{number}:{turn}\n"));

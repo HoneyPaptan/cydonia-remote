@@ -266,3 +266,68 @@ fn a_message_from_a_session_is_signed_with_its_turn() {
         message: format!("from {from}:2\n\nfoo"),
     }));
 }
+
+fn record_of(scratch: &Scratch, at: &str) -> String {
+    let number: u64 = at.trim_start_matches('#').parse().unwrap();
+    artifact::entry::list(scratch.path())
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.number == number)
+        .unwrap()
+        .id
+}
+
+#[test]
+fn a_read_says_when_the_session_is_still_working() {
+    use cydonia_mcp::rail::{self, Activity};
+    let scratch = Scratch::new("session-working");
+    let server = scratch.server();
+    let at = filed(&scratch, &[("one", "a")]);
+    rail::set_activity([(record_of(&scratch, &at), Activity::Working)].into());
+
+    let read = said(server.call("session_read", json!({ "session": at }), Some(scratch.path())));
+
+    assert!(read.contains("(working now)"), "{read}");
+}
+
+#[test]
+fn a_read_with_wait_holds_until_the_session_is_idle() {
+    use cydonia_mcp::rail::{self, Activity};
+    let scratch = Scratch::new("session-wait");
+    let server = scratch.server();
+    let at = filed(&scratch, &[("one", "a")]);
+    rail::set_activity([(record_of(&scratch, &at), Activity::Working)].into());
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        rail::set_activity(Default::default());
+    });
+    let started = std::time::Instant::now();
+
+    let read = said(server.call(
+        "session_read",
+        json!({ "session": at, "wait": 10 }),
+        Some(scratch.path()),
+    ));
+
+    assert!(started.elapsed() >= std::time::Duration::from_millis(600));
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    assert!(!read.contains("working now"), "{read}");
+}
+
+#[test]
+fn a_wait_ends_at_a_permission_prompt() {
+    use cydonia_mcp::rail::{self, Activity};
+    let scratch = Scratch::new("session-asking");
+    let server = scratch.server();
+    let _rail = Rail;
+    let at = filed(&scratch, &[("one", "a")]);
+    rail::set_activity([(record_of(&scratch, &at), Activity::Asking)].into());
+
+    let sent = said(server.call(
+        "session_send",
+        json!({ "session": at, "message": "go", "wait": 30 }),
+        Some(scratch.path()),
+    ));
+
+    assert!(sent.contains("permission prompt"), "{sent}");
+}
