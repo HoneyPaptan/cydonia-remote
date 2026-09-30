@@ -223,7 +223,7 @@ impl Render for Gallery {
                     .h(px(240.))
                     .relative()
                     .overflow_hidden()
-                    .rounded(px(8.))
+                    .rounded(px(Theme::button_radius()))
                     .cursor_pointer()
                     .on_mouse_down(
                         MouseButton::Left,
@@ -270,7 +270,7 @@ impl Render for Gallery {
                                     .child(crate::view::picture::framed(
                                         source,
                                         crate::model::pictures::Fit::Contain,
-                                        px(0.),
+                                        px(Theme::button_radius()),
                                         img(source.clone())
                                             .absolute()
                                             .inset_0()

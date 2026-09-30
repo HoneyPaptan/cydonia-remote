@@ -163,7 +163,7 @@ impl Preview {
             .h(height)
             .relative()
             .overflow_hidden()
-            .rounded(px(8.))
+            .rounded(px(Theme::button_radius()))
             .when(zoomed, |stage| {
                 stage.cursor(if self.press.is_some() {
                     CursorStyle::ClosedHand
@@ -235,7 +235,7 @@ impl Preview {
                         slide.child(crate::view::picture::framed(
                             source,
                             crate::model::pictures::Fit::Contain,
-                            px(0.),
+                            px(Theme::button_radius()),
                             picture,
                         ))
                     }),
