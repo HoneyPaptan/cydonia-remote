@@ -598,6 +598,13 @@ impl Cydonia {
         &self.leaves[at]
     }
 
+    pub fn paste_files(&mut self, files: Vec<crate::model::pick::Picked>, window: &Window, cx: &mut Context<Self>) {
+        let composer = self.leaf().composer.clone();
+        if composer.focus_handle(cx).contains_focused(window, cx) {
+            composer.update(cx, |composer, cx| composer.attach_picked(files, cx));
+        }
+    }
+
     /// The entities one pane needs, with the composer wired to this window.
     ///
     /// `on` is the pane's entry, where it has one: an event from a composer in

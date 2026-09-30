@@ -668,6 +668,11 @@ impl Composer {
         }
     }
 
+    pub fn attach_picked(&mut self, files: Vec<pick::Picked>, cx: &mut Context<Self>) {
+        self.attachments.extend(files.into_iter().map(picked));
+        cx.notify();
+    }
+
     /// Take the pictures among dropped files. Called by the session pane, whose
     /// whole area is the drop target — the composer alone is a narrow strip to
     /// aim a drag at.

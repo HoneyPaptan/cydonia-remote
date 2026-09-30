@@ -67,7 +67,7 @@ async fn read_all(input: &HtmlInputElement) -> Vec<Picked> {
     picked
 }
 
-async fn read(file: &File) -> Option<Picked> {
+pub async fn read(file: &File) -> Option<Picked> {
     let buffer = JsFuture::from(file.array_buffer()).await.ok()?;
     Some(Picked {
         name: file.name(),

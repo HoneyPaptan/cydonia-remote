@@ -535,6 +535,7 @@ async fn boot() -> Result<(), String> {
             crate::laptop::install(endpoint.clone());
             crate::hosts::install();
             crate::pick::install();
+            crate::paste::install(window, cx.to_async());
             crate::pictures::install();
             let (outbox, queued) = mpsc::unbounded();
             gui::model::sink::install(Rc::new(Commands { outbox }));
