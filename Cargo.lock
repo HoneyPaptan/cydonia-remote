@@ -2491,6 +2491,7 @@ dependencies = [
 name = "cydonia-mobile"
 version = "0.1.19"
 dependencies = [
+ "base64 0.22.1",
  "bezel",
  "bezel-gpui-web",
  "console_error_panic_hook",
