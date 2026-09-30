@@ -3,6 +3,7 @@
 //! from.
 
 pub mod article;
+pub mod backdrop;
 pub mod cover;
 pub mod disk;
 pub mod file_url;

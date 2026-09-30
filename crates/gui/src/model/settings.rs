@@ -164,6 +164,8 @@ pub struct Appearance {
     pub wrap_code: bool,
     /// The wash `==text==` paints in.
     pub highlight: Highlight,
+    pub background_effect: crate::model::backdrop::Effect,
+    pub background_intensity: f32,
 }
 
 /// A highlight colour, by the name [`markdown::HighlightColor`] stores.
@@ -279,6 +281,8 @@ impl Default for Appearance {
             // edge — that is the cost, and the switch is the way back.
             wrap_code: false,
             highlight: Highlight::default(),
+            background_effect: crate::model::backdrop::Effect::default(),
+            background_intensity: crate::model::backdrop::DEFAULT_INTENSITY,
         }
     }
 }
@@ -293,6 +297,8 @@ impl Appearance {
         };
         self.article_font_size = self.article_font_size.map(clamp_content_text_size);
         self.mono_font_size = clamp_content_text_size(self.mono_font_size);
+        self.background_intensity =
+            crate::model::backdrop::clamp_intensity(self.background_intensity);
         // A family hand-edited to the empty string names nothing; it is the
         // same answer as the key being absent.
         self.ui_font = self.ui_font.take().filter(|name| !name.trim().is_empty());
@@ -757,6 +763,9 @@ fn write_appearance(doc: &mut toml_edit::DocumentMut, appearance: &Appearance) -
     held["sidebar_scrollbars"] = toml_edit::value(appearance.sidebar_scrollbars.key());
     held["wrap_code"] = toml_edit::value(appearance.wrap_code);
     held["highlight"] = toml_edit::value(appearance.highlight.key());
+    held["background_effect"] = toml_edit::value(appearance.background_effect.key());
+    held["background_intensity"] =
+        toml_edit::value(f64::from(appearance.background_intensity));
     Ok(())
 }
 

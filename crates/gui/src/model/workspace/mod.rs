@@ -15,7 +15,7 @@ use crate::{
     memory,
     model::{
         article::{self, Article},
-        fonts,
+        backdrop, fonts,
         project::Project,
         session::ChatSession,
         settings::{self, Feature, Settings},
@@ -299,6 +299,8 @@ impl Workspace {
             sidebar_scrollbars: self.settings.appearance.sidebar_scrollbars,
             wrap_code: self.wrap_code,
             highlight: self.settings.appearance.highlight,
+            background_effect: self.settings.appearance.background_effect,
+            background_intensity: self.settings.appearance.background_intensity,
         });
     }
 
@@ -683,6 +685,31 @@ impl Workspace {
     pub fn set_indent_project_rows(&mut self, indent: bool, cx: &mut Context<Self>) {
         self.indent_project_rows = indent;
         self.save_appearance();
+        cx.notify();
+    }
+
+    pub fn set_background_effect(&mut self, effect: backdrop::Effect, cx: &mut Context<Self>) {
+        self.settings.appearance.background_effect = effect;
+        backdrop::set_effect(effect, cx);
+        self.save_appearance();
+        cx.notify();
+    }
+
+    pub fn set_background_intensity(&mut self, intensity: f32, cx: &mut Context<Self>) {
+        let intensity = backdrop::clamp_intensity(intensity);
+        self.settings.appearance.background_intensity = intensity;
+        backdrop::set_intensity(intensity, cx);
+        self.save_appearance();
+        cx.notify();
+    }
+
+    pub fn choose_background(&mut self, path: std::path::PathBuf, cx: &mut Context<Self>) {
+        backdrop::choose(path, cx);
+        cx.notify();
+    }
+
+    pub fn clear_background(&mut self, cx: &mut Context<Self>) {
+        backdrop::clear(cx);
         cx.notify();
     }
 

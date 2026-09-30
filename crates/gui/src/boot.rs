@@ -3,7 +3,7 @@
 
 use crate::{
     memory,
-    model::{fonts, language, settings::Settings, workspace},
+    model::{backdrop, fonts, language, settings::Settings, workspace},
     view::{article, keymap},
 };
 use bezel::{
@@ -36,6 +36,7 @@ pub fn init(settings: &Settings, cx: &mut App) {
     markdown::set_source_style(cx, article::source_style);
     markdown::set_marks(cx, article::marks());
     article::set_highlight(look.highlight.color());
+    backdrop::init(look.background_effect, look.background_intensity, cx);
     markdown::set_mark_paint(cx, article::mark_paint);
     // The whole catalogue, not the cached subset: the fence picker lists
     // what this list holds, and a picker that offered only what had already
