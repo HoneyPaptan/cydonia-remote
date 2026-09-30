@@ -5,9 +5,16 @@ use crate::view::{
 use bezel::{
     gpui::{self, AnyElement, Context, Window, div, prelude::*, px},
     theme::{TextStyle, Theme, Typeset},
-    ui::icons::{self, Icon},
+    ui::{
+        icons::{self, Icon},
+        touch,
+    },
 };
 use std::path::PathBuf;
+
+const QUICK_LIST_HEIGHT: f32 = 420.;
+const QUICK_LIST_SHARE: f32 = 0.55;
+const QUICK_ROW_HEIGHT: f32 = 64.;
 
 #[derive(Clone, Copy)]
 pub(crate) enum Quick {
@@ -286,15 +293,22 @@ impl Cydonia {
             .collect()
     }
 
-    fn quick_list(&self, id: &'static str, rows: Vec<AnyElement>) -> AnyElement {
+    fn quick_list(&self, id: &'static str, rows: Vec<AnyElement>, window: &Window) -> AnyElement {
+        let height = px(QUICK_LIST_HEIGHT).min(window.viewport_size().height * QUICK_LIST_SHARE);
+        let scrolls = rows.len() as f32 * QUICK_ROW_HEIGHT > f32::from(height);
         div()
-            .id(id)
-            .max_h(px(420.))
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .gap(px(8.))
-            .children(rows)
+            .relative()
+            .child(
+                div()
+                    .id(id)
+                    .max_h(height)
+                    .overflow_y_scroll()
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.))
+                    .children(rows),
+            )
+            .when(scrolls, |list| list.child(touch::scrolls()))
             .into_any_element()
     }
 
@@ -307,11 +321,11 @@ impl Cydonia {
         let (caption, body) = match self.quick_step {
             Some(Step::Project(quick)) => (
                 format!("{} in which project?", quick.label()),
-                self.quick_list("quick-projects", self.quick_projects(&theme, cx)),
+                self.quick_list("quick-projects", self.quick_projects(&theme, cx), window),
             ),
             Some(Step::Agent) => (
                 "New session with which agent?".to_owned(),
-                self.quick_list("quick-agents", self.quick_agents(&theme, cx)),
+                self.quick_list("quick-agents", self.quick_agents(&theme, cx), window),
             ),
             None => (
                 "Quick actions".to_owned(),

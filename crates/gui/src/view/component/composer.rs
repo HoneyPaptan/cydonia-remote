@@ -19,7 +19,7 @@ use bezel::ui::scroll as scrollbars;
 use bezel::{
     gpui::{
         self, AnyElement, App, ClipboardEntry, Context, Entity, EventEmitter, ExternalPaths,
-        FocusHandle, Focusable, KeyBinding, Render, ScrollHandle, SharedString, Window,
+        FocusHandle, Focusable, KeyBinding, Pixels, Render, ScrollHandle, SharedString, Window,
         actions, div, img, prelude::*, px,
     },
     theme::{Glass, SurfaceStyle, TextStyle, Theme, Typeset},
@@ -30,6 +30,7 @@ use bezel::{
         popover,
         surface::{self, Surfaced as _},
         tooltip::Tooltip,
+        touch,
         widgets::{Buttons as _, Controls as _},
     },
 };
@@ -60,6 +61,10 @@ const WARN_AT: f32 = 0.8;
 const PICKER_HEIGHT: f32 = 320.;
 
 const PICKER_ROWS: usize = 80;
+
+fn picker_width(window: &Window) -> Pixels {
+    px(root::composer_width()).min(window.viewport_size().width - px(2. * root::COMPOSER_MARGIN))
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Sigil {
@@ -1009,11 +1014,12 @@ impl Composer {
                     // The card sizes to its widest row, and a row is a sentence — so
                     // without this it opens as wide as the window lets it. See
                     // [`root::composer_width`].
-                    .max_w(px(root::composer_width()))
+                    .max_w(picker_width(window))
                     .max_h(px(PICKER_HEIGHT))
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll),
                 )
+                .child(touch::scrolls())
                 .child(scrollbars::Overlay::new(
                     "composer-commands-bar",
                     &self.scroll,
@@ -1184,6 +1190,7 @@ impl Composer {
             div()
                 .relative()
                 .child(card)
+                .child(touch::scrolls())
                 .child(scrollbars::Overlay::new(
                     "composer-options-bar",
                     &self.picking_scroll,

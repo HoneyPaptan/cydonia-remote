@@ -235,6 +235,9 @@ impl Cydonia {
             let shut_out = across < 0. && self.keeps_the_right_panel_shut(cx);
             return (!owned && !shut_out && !self.quick).then_some(Swipe::Following(across));
         }
+        if touch::scrolls_at(at, window, cx) {
+            return None;
+        }
         let height = f32::from(window.viewport_size().height);
         let lower_half = f32::from(at.y) > height / 2. && touch::pulls_at(at, window, cx);
         let from_bottom = (f32::from(at.y) > height - PULL_BAND || lower_half) && down < 0.;

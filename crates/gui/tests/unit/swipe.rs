@@ -357,3 +357,42 @@ fn a_grip_under_the_drawer_or_the_panel_leaves_the_touch_to_them(cx: &mut gpui::
     focus_the_article(&root, &mut visual);
     assert_eq!(grips_found(&mut visual), vec![]);
 }
+
+fn pan_over_scroller(at: gpui::Point<gpui::Pixels>, down: f32, visual: &mut gpui::VisualTestContext) {
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    bezel::ui::touch::mark_scroll(gpui::Bounds::new(point(px(0.), px(300.)), size(px(390.), px(500.))));
+    let step = |touch_phase, y: f32| {
+        PlatformInput::ScrollWheel(gpui::ScrollWheelEvent {
+            position: at,
+            delta: ScrollDelta::Pixels(point(px(0.), px(y))),
+            modifiers: gpui::Modifiers::default(),
+            touch_phase,
+        })
+    };
+    visual.update(|window, cx| {
+        window.dispatch_event(step(TouchPhase::Started, down / 4.), cx);
+        for _ in 0..3 {
+            window.dispatch_event(step(TouchPhase::Moved, down / 4.), cx);
+        }
+        window.dispatch_event(step(TouchPhase::Ended, 0.), cx);
+    });
+}
+
+#[gpui::test]
+fn scrolling_a_list_at_the_bottom_leaves_quick_actions_shut(cx: &mut gpui::TestAppContext) {
+    let scratch = Scratch::new("quick-list-up");
+    let (root, mut visual) = open_phone(&scratch, cx);
+
+    pan_over_scroller(point(px(200.), px(760.)), -200., &mut visual);
+    assert!(!root.read_with(&visual, |root, _| root.quick));
+}
+
+#[gpui::test]
+fn scrolling_a_list_inside_the_open_sheet_does_not_close_it(cx: &mut gpui::TestAppContext) {
+    let scratch = Scratch::new("quick-list-down");
+    let (root, mut visual) = open_phone(&scratch, cx);
+    root.update(&mut visual, |root, cx| root.open_quick_actions(cx));
+
+    pan_over_scroller(point(px(200.), px(500.)), 200., &mut visual);
+    assert!(root.read_with(&visual, |root, _| root.quick));
+}

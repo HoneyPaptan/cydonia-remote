@@ -11,6 +11,7 @@ enum Kind {
     Sideways,
     Grip,
     Pull,
+    Scroll,
 }
 
 thread_local! {
@@ -25,6 +26,10 @@ pub fn sideways() -> impl IntoElement {
     mark(Kind::Sideways).inset_0()
 }
 
+pub fn scrolls() -> impl IntoElement {
+    mark(Kind::Scroll).inset_0()
+}
+
 pub fn grip() -> impl IntoElement {
     let reach = px(-GRIP_REACH);
     mark(Kind::Grip).top(reach).left(reach).right(reach).bottom(reach)
@@ -34,8 +39,16 @@ pub fn mark_pull(bounds: Bounds<Pixels>) {
     record(Kind::Pull, bounds);
 }
 
+pub fn mark_scroll(bounds: Bounds<Pixels>) {
+    record(Kind::Scroll, bounds);
+}
+
 pub fn pulls_at(position: Point<Pixels>, window: &Window, cx: &App) -> bool {
     found(Kind::Pull, position, window, cx).is_some()
+}
+
+pub fn scrolls_at(position: Point<Pixels>, window: &Window, cx: &App) -> bool {
+    found(Kind::Scroll, position, window, cx).is_some()
 }
 
 pub fn scrolls_sideways_at(position: Point<Pixels>, window: &Window, cx: &App) -> bool {
