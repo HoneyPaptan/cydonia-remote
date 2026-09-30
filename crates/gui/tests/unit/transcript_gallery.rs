@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn images_keep_send_order_and_are_separate_from_selectable_text() {
-    let (doc, images) =
+    let (doc, images, _) =
         document("Before\n\n![](/tmp/one.png)\n\nBetween\n\n![](/tmp/two.png)\n\nAfter");
     assert_eq!(images, ["/tmp/one.png", "/tmp/two.png"]);
     assert_eq!(
@@ -178,4 +178,14 @@ fn preview_zooms_by_button_and_key_and_resets_on_paging(cx: &mut gpui::TestAppCo
     visual.simulate_keystrokes("= right");
     visual.run_until_parked();
     assert_eq!(zoom(&mut visual), 1., "paging resets zoom");
+}
+
+#[test]
+fn a_sent_document_is_a_chip_and_not_a_line_of_text() {
+    let (doc, images, files) = document(
+        "Look\n\n![](/tmp/one.png)\n\n[notes.pdf](</tmp/media-1-notes.pdf>)\n\nsee [site](https://x.dev) too",
+    );
+    assert_eq!(images, ["/tmp/one.png"]);
+    assert_eq!(files, ["notes.pdf"]);
+    assert_eq!(doc.blocks.len(), 2);
 }

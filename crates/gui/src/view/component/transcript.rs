@@ -927,7 +927,7 @@ fn zone(
     let first = turn.range.start;
     let mut zone = div().flex().flex_col().gap(px(10.)).pb(px(28.));
     if let Some(ChatItem::User(text)) = chat.items.get(first) {
-        let (doc, images) = gallery::document(text);
+        let (doc, images, files) = gallery::document(text);
         let gallery = (!images.is_empty()).then(|| {
             chat.transcript
                 .galleries
@@ -974,7 +974,10 @@ fn zone(
                         .when(!doc.blocks.is_empty(), |bubble| {
                             bubble.child(prose(chat, first, text, window, cx))
                         })
-                        .children(gallery),
+                        .children(gallery)
+                        .when(!files.is_empty(), |bubble| {
+                            bubble.child(gallery::chips(files, &theme))
+                        }),
                 )
                 .child(
                     div()

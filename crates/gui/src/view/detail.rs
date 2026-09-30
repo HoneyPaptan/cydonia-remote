@@ -1517,7 +1517,7 @@ impl Cydonia {
                 .children(queue.iter().enumerate().map(|(ix, text)| {
                     let edit_text = text.clone();
                     let cancel_text = text.clone();
-                    let (doc, images) = transcript::gallery::document(text);
+                    let (doc, images, files) = transcript::gallery::document(text);
                     let gallery = (!images.is_empty()).then(|| {
                         self.leaf_of_mut(pane.as_ref())
                             .queued_galleries
@@ -1555,7 +1555,10 @@ impl Cydonia {
                                         cx,
                                     ))
                                 })
-                                .children(gallery),
+                                .children(gallery)
+                                .when(!files.is_empty(), |bubble| {
+                                    bubble.child(transcript::gallery::chips(files, &theme))
+                                }),
                         )
                         .child(
                             div()
