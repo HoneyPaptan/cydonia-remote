@@ -11,6 +11,9 @@ pub fn prompt(
     embedded_context: bool,
     mut blocks: Vec<ContentBlock>,
 ) -> Vec<ContentBlock> {
+    if is_slash_command(&blocks) {
+        return blocks;
+    }
     let mut context = prompts::session_context(cwd, mcp_available);
     if let Some(shown) = mcp::tools::workspace::on_screen() {
         context.push_str("\n\nOn screen in cydonia:\n");
@@ -33,4 +36,8 @@ pub fn prompt(
     // Agents may derive a temporary title from the first text block.
     blocks.push(context);
     blocks
+}
+
+fn is_slash_command(blocks: &[ContentBlock]) -> bool {
+    matches!(blocks, [ContentBlock::Text(text)] if text.text.starts_with('/'))
 }

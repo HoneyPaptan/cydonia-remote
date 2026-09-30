@@ -62,3 +62,28 @@ fn text_only_agents_keep_user_blocks_first() {
     assert!(matches!(&blocks[2], ContentBlock::Text(_)));
     assert!(text(&blocks[2]).contains(&prompts::resources::catalog()));
 }
+
+#[test]
+fn a_slash_command_goes_alone_so_the_agent_runs_it_itself() {
+    for embedded in [true, false] {
+        let blocks = context::prompt(
+            Path::new("/project"),
+            true,
+            embedded,
+            vec!["/compact keep the plan".into()],
+        );
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(text(&blocks[0]), "/compact keep the plan");
+    }
+}
+
+#[test]
+fn a_slash_inside_a_sentence_is_still_a_message() {
+    let blocks = context::prompt(
+        Path::new("/project"),
+        true,
+        true,
+        vec!["what does /compact do".into()],
+    );
+    assert_eq!(blocks.len(), 2);
+}
