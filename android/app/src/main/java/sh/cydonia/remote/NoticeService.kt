@@ -7,6 +7,8 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.os.IBinder
 import java.net.HttpURLConnection
 import java.net.URL
@@ -82,15 +84,32 @@ class NoticeService : Service() {
 
   private fun createChannels() {
     val manager = getSystemService(NotificationManager::class.java)
+    RETIRED_CHANNELS.forEach(manager::deleteNotificationChannel)
+    manager.createNotificationChannel(
+      NotificationChannel(CHANNEL_WATCHING, getString(R.string.channel_watching), NotificationManager.IMPORTANCE_MIN),
+    )
     listOf(
-      Triple(CHANNEL_WATCHING, R.string.channel_watching, NotificationManager.IMPORTANCE_MIN),
       Triple(CHANNEL_APPROVALS, R.string.channel_approvals, NotificationManager.IMPORTANCE_HIGH),
-      Triple(CHANNEL_DONE, R.string.channel_done, NotificationManager.IMPORTANCE_DEFAULT),
-      Triple(CHANNEL_LOST, R.string.channel_lost, NotificationManager.IMPORTANCE_DEFAULT),
+      Triple(CHANNEL_DONE, R.string.channel_done, NotificationManager.IMPORTANCE_HIGH),
+      Triple(CHANNEL_LOST, R.string.channel_lost, NotificationManager.IMPORTANCE_HIGH),
     ).forEach { (id, name, importance) ->
-      manager.createNotificationChannel(NotificationChannel(id, getString(name), importance))
+      manager.createNotificationChannel(loud(NotificationChannel(id, getString(name), importance), id))
     }
   }
+
+  private fun loud(channel: NotificationChannel, id: String): NotificationChannel =
+    channel.apply {
+      setSound(
+        RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+        AudioAttributes.Builder()
+          .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+          .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+          .build(),
+      )
+      enableVibration(true)
+      vibrationPattern = if (id == CHANNEL_APPROVALS) ASKING_BUZZ else DONE_BUZZ
+      lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+    }
 
   private fun opener(): PendingIntent =
     PendingIntent.getActivity(
@@ -132,9 +151,12 @@ class NoticeService : Service() {
     private const val STORE = "notices"
     private const val WATCHING_ID = 1
     private const val CHANNEL_WATCHING = "watching"
-    private const val CHANNEL_APPROVALS = "approvals"
-    private const val CHANNEL_DONE = "done"
-    private const val CHANNEL_LOST = "lost"
+    private const val CHANNEL_APPROVALS = "approvals_loud"
+    private const val CHANNEL_DONE = "done_loud"
+    private const val CHANNEL_LOST = "lost_loud"
+    private val RETIRED_CHANNELS = listOf("approvals", "done", "lost")
+    private val ASKING_BUZZ = longArrayOf(0, 300, 150, 300, 150, 300)
+    private val DONE_BUZZ = longArrayOf(0, 250, 120, 250)
     private const val POLL_SECONDS = 25
     private const val CONNECT_TIMEOUT = 10_000
     private const val RETRY_FIRST = 2_000L
