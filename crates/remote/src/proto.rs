@@ -86,6 +86,8 @@ pub struct SessionHeader {
     pub plan: Vec<(String, PlanStatus)>,
     pub permission: Option<PermissionView>,
     pub queued: usize,
+    #[serde(default)]
+    pub pending: Vec<String>,
     pub usage: Option<Usage>,
     #[serde(default)]
     pub config: Vec<SessionConfigOption>,
@@ -251,6 +253,11 @@ pub enum Action {
     },
     Cancel {
         key: SessionKey,
+    },
+    Unqueue {
+        key: SessionKey,
+        index: usize,
+        text: String,
     },
     RespondPermission {
         key: SessionKey,

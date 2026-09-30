@@ -168,6 +168,15 @@ pub fn route(workspace: &mut Workspace, action: Action, cx: &mut Context<Workspa
             workspace.with_session(id, cx, |chat| chat.cancel());
             Outcome::Accepted
         }
+        Action::Unqueue { key, index, text } => {
+            let Some(id) = find(&workspace.projects, &key) else {
+                return rejected(Reason::UnknownSession);
+            };
+            workspace.with_session(id, cx, |chat| {
+                chat.take_queued(index, &text);
+            });
+            Outcome::Accepted
+        }
         Action::SetMode { key, mode } => {
             let Some(id) = find(&workspace.projects, &key) else {
                 return rejected(Reason::UnknownSession);

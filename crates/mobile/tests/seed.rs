@@ -22,6 +22,7 @@ fn view(agent: &str) -> SessionView {
             plan: vec![("Write the hub".into(), PlanStatus::Active)],
             permission: None,
             queued: 0,
+            pending: Vec::new(),
             usage: None,
             config: Vec::new(),
             modes: None,

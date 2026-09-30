@@ -169,6 +169,14 @@ impl Sink for Commands {
         });
     }
 
+    fn unqueue(&self, project: &Path, record: &str, index: usize, text: String) {
+        self.deliver(Action::Unqueue {
+            key: key(project, record),
+            index,
+            text,
+        });
+    }
+
     fn respond_permission(&self, project: &Path, record: &str, request: u64, option: String) {
         self.deliver(Action::RespondPermission {
             key: key(project, record),

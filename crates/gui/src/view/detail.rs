@@ -1480,9 +1480,7 @@ impl Cydonia {
                 return;
             }
             workspace.with_session(id, cx, |chat| {
-                if chat.queue.get(ix).is_some_and(|queued| queued == expected) {
-                    text = chat.queue.remove(ix);
-                }
+                text = chat.take_queued(ix, expected);
             });
         });
         text

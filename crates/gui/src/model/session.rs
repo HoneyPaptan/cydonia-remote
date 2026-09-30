@@ -886,6 +886,17 @@ impl ChatSession {
         self.queue.remove(ix);
     }
 
+    pub fn take_queued(&mut self, ix: usize, expected: &str) -> Option<String> {
+        if self.queue.get(ix).is_none_or(|queued| queued != expected) {
+            return None;
+        }
+        #[cfg(not(feature = "desktop"))]
+        if let (Some(sink), Some(record)) = (crate::model::sink::get(), self.record.as_deref()) {
+            sink.unqueue(&self.cwd, record, ix, expected.to_owned());
+        }
+        self.queue.remove(ix)
+    }
+
     #[cfg(feature = "desktop")]
     fn apply(&mut self, event: Event) {
         if self.closed {

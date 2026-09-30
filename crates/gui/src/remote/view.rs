@@ -92,6 +92,7 @@ pub fn header(chat: &ChatSession) -> SessionHeader {
         plan: chat.plan.clone(),
         permission: permission(chat),
         queued: chat.queue.len(),
+        pending: chat.queue.iter().cloned().collect(),
         usage: chat.usage.map(|usage| Usage {
             used: usage.used,
             size: usage.size,

@@ -140,6 +140,17 @@ fn archived_sessions_ignore_events_and_queued_prompts() {
     assert_eq!(chat.touched(), before);
 }
 
+#[test]
+fn taking_a_queued_prompt_needs_the_text_it_was_shown_with() {
+    let scratch = Scratch::new();
+    let mut chat = scratch.chat();
+    chat.queue.extend(["first".to_owned(), "second".to_owned()]);
+    assert_eq!(chat.take_queued(1, "first"), None);
+    assert_eq!(chat.take_queued(5, "second"), None);
+    assert_eq!(chat.take_queued(1, "second").as_deref(), Some("second"));
+    assert_eq!(chat.queue.len(), 1);
+}
+
 async fn wait_for_close(events: &mut acp::Events) {
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {

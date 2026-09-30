@@ -45,6 +45,7 @@ pub fn header(chat: &mut ChatSession, header: &SessionHeader) {
     chat.fork = header.fork.clone();
     chat.sent_at = header.sent_at.clone();
     chat.plan = header.plan.clone();
+    chat.queue = header.pending.iter().cloned().collect();
     chat.updated = UNIX_EPOCH + Duration::from_secs(header.updated);
     chat.follow_turn(matches!(
         header.status,

@@ -17,6 +17,7 @@ fn header(status: Status) -> SessionHeader {
         plan: vec![("Stream events".into(), PlanStatus::Active)],
         permission: None,
         queued: 0,
+        pending: Vec::new(),
         usage: Some(Usage {
             used: 10,
             size: 100,
