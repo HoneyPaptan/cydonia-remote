@@ -714,7 +714,7 @@ impl Cydonia {
             .min_h_0()
             .min_w_0()
             .relative()
-            .bg(root::content_bg(&theme))
+            .bg(root::content_bg(&theme, cx))
             .flex()
             .flex_col()
             .child(content)

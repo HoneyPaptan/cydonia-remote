@@ -13,6 +13,7 @@ use crate::{
 };
 use crate::{
     model::{
+        backdrop,
         session::ChatSession,
         settings::Settings,
         state::State,
@@ -41,7 +42,7 @@ use bezel::{
         self, AnyElement, App, Axis, Bounds, Context, Div, DragMoveEvent, Empty, Entity,
         FocusHandle, Focusable, Hsla, KeyBinding, PathPromptOptions, Render, SharedString,
         TitlebarOptions, UniformListScrollHandle, Window, WindowBounds, WindowHandle,
-        WindowOptions, actions, div, point, prelude::*, px, size,
+        WindowOptions, actions, div, img, point, prelude::*, px, size, ImageSource, ObjectFit,
     },
     motion::{Fade, Painter},
     theme::{Material, TextStyle, Theme, Typeset, appearance},
@@ -166,13 +167,35 @@ pub(crate) fn composer_width() -> f32 {
 /// The sidebar's fill. Opaque, it takes the chrome tone: the light palette's
 /// `surface` is the grey the content plane's white sits inside, and falling
 /// back to the panel would leave the two columns one flat sheet.
-pub(crate) fn sidebar_bg(theme: &Theme) -> Hsla {
-    material(theme, SIDEBAR_MATERIAL).unwrap_or(theme.surface)
+pub(crate) fn sidebar_bg(theme: &Theme, cx: &App) -> Hsla {
+    backdrop::veil(theme.surface, cx)
+        .or_else(|| material(theme, SIDEBAR_MATERIAL))
+        .unwrap_or(theme.surface)
 }
 
 /// The content column's fill.
-pub(crate) fn content_bg(theme: &Theme) -> Hsla {
-    material(theme, CONTENT_MATERIAL).unwrap_or(theme.bg)
+pub(crate) fn content_bg(theme: &Theme, cx: &App) -> Hsla {
+    backdrop::veil(theme.bg, cx)
+        .or_else(|| material(theme, CONTENT_MATERIAL))
+        .unwrap_or(theme.bg)
+}
+
+fn backdrop_layer(theme: &Theme, cx: &mut App) -> Option<AnyElement> {
+    let light = theme.appearance == bezel::theme::Appearance::Light;
+    let art = backdrop::frame(light, cx)?;
+    Some(
+        div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+            .child(
+                img(ImageSource::Render(art))
+                    .size_full()
+                    .object_fit(ObjectFit::Cover),
+            )
+            .into_any_element(),
+    )
 }
 
 /// A column's own tint at one thickness on the material ladder, or nothing
@@ -1736,6 +1759,7 @@ impl Render for Cydonia {
             // An action reaches the handlers above only through the focused
             // element's ancestors. Sized at nothing, so the pane that does hold
             // a field keeps its focus through a click anywhere else.
+            .children(backdrop_layer(&theme, cx))
             .child(div().track_focus(&self.focus))
             .when(docked, |root| root.child(self.sidebar(window, cx)))
             .when(!covered, |root| root.child(self.detail(window, cx)))

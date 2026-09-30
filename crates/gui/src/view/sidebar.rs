@@ -449,7 +449,7 @@ impl Cydonia {
             .flex_none()
             .w(px(self.sidebar_extent(window)))
             .h_full()
-            .bg(root::sidebar_bg(&theme))
+            .bg(root::sidebar_bg(&theme, cx))
             .flex()
             .flex_col()
             // The fold out at the trailing edge: the lights float in the

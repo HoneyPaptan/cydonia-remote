@@ -1,12 +1,15 @@
 //! The appearance section: which of the three modes the app paints in.
 
 use crate::{
-    model::workspace::Workspace,
+    model::{
+        backdrop::{self, Effect},
+        workspace::Workspace,
+    },
     view::settings::{self, SettingsWindow, Switch},
 };
 use artifact::board::View;
 use bezel::{
-    gpui::{AnyElement, Context, DragMoveEvent, Empty, div, prelude::*, px},
+    gpui::{AnyElement, Context, DragMoveEvent, Empty, PathPromptOptions, div, prelude::*, px},
     theme::{
         TextStyle, Theme, Tint, Typeset,
         appearance::{self, AppearanceMode},
@@ -43,6 +46,7 @@ impl SettingsWindow {
             .gap(px(settings::GROUP_GAP))
             .child(theme.group_box().child(self.theme_row(cx)))
             .child(self.colors_group(cx))
+            .child(self.background_group(cx))
             .child(self.typography_group(cx))
             .child(self.families_group(cx))
             .child(self.sidebar_group(cx))
@@ -127,6 +131,153 @@ impl SettingsWindow {
                     .child(self.intensity_row(cx)),
             )
             .into_any_element()
+    }
+
+    fn background_group(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = Theme::of(cx).clone();
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(settings::LABEL_GAP))
+            .child(theme.field_label("Background"))
+            .child(
+                theme
+                    .group_box()
+                    .child(self.background_image_row(cx))
+                    .child(self.background_effect_row(cx))
+                    .child(self.background_strength_row(cx)),
+            )
+            .into_any_element()
+    }
+
+    fn background_image_row(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = Theme::of(cx).clone();
+        let set = backdrop::is_set(cx);
+        let button = |id: &'static str, label: &'static str| {
+            div()
+                .id(id)
+                .px(px(10.))
+                .py(px(4.))
+                .rounded(px(Theme::control_radius()))
+                .border_1()
+                .border_color(theme.border)
+                .text_style(TextStyle::Callout)
+                .cursor_pointer()
+                .hover(|el| el.bg(theme.element_hover))
+                .child(label)
+        };
+        theme
+            .card_row(true)
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .child(theme.row_title("Image"))
+                    .child(
+                        div()
+                            .mt(px(4.))
+                            .text_style(TextStyle::Subheadline)
+                            .text_color(theme.text_muted)
+                            .child("A picture behind the whole app."),
+                    ),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .flex()
+                    .flex_row()
+                    .gap(px(6.))
+                    .child(
+                        button("background-choose", if set { "Change" } else { "Choose" }).on_click(
+                            cx.listener(|this, _, _, cx| this.choose_background(cx)),
+                        ),
+                    )
+                    .children(set.then(|| {
+                        button("background-remove", "Remove").on_click(cx.listener(
+                            |this, _, _, cx| {
+                                this.workspace
+                                    .update(cx, |workspace, cx| workspace.clear_background(cx));
+                                cx.notify();
+                            },
+                        ))
+                    })),
+            )
+            .into_any_element()
+    }
+
+    fn choose_background(&mut self, cx: &mut Context<Self>) {
+        let picked = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: None,
+        });
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(paths))) = picked.await else {
+                return;
+            };
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
+            let _ = this.update(cx, |this, cx| {
+                this.workspace
+                    .update(cx, |workspace, cx| workspace.choose_background(path, cx));
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn background_effect_row(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = Theme::of(cx).clone();
+        let current = self.workspace.read(cx).settings.appearance.background_effect;
+        theme
+            .card_row(false)
+            .child(div().flex_1().min_w_0().child(theme.row_title("Effect")))
+            .child(
+                div()
+                    .flex()
+                    .gap(px(2.))
+                    .children(Effect::ALL.into_iter().enumerate().map(|(ix, effect)| {
+                        div()
+                            .id(("background-effect", ix))
+                            .px(px(8.))
+                            .py(px(4.))
+                            .rounded(px(Theme::control_radius()))
+                            .text_style(TextStyle::Callout)
+                            .cursor_pointer()
+                            .when(current == effect, |el| el.bg(theme.element_active))
+                            .when(current != effect, |el| {
+                                el.text_color(theme.text_muted)
+                                    .hover(|el| el.bg(theme.element_hover))
+                            })
+                            .child(effect.label())
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.workspace.update(cx, |workspace, cx| {
+                                    workspace.set_background_effect(effect, cx)
+                                });
+                                cx.notify();
+                            }))
+                    })),
+            )
+            .into_any_element()
+    }
+
+    fn background_strength_row(&self, cx: &mut Context<Self>) -> AnyElement {
+        let (low, high) = backdrop::INTENSITY;
+        let strength = self.workspace.read(cx).settings.appearance.background_intensity;
+        self.tint_row(
+            "background-strength",
+            "Strength",
+            "How much of the picture shows through the panels.",
+            (strength - low) / (high - low),
+            move |workspace, fraction, cx| {
+                workspace.set_background_intensity(low + fraction * (high - low), cx);
+            },
+            cx,
+        )
     }
 
     fn scrollbars_group(&self, cx: &mut Context<Self>) -> AnyElement {

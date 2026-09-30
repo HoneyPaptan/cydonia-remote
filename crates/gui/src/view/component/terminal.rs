@@ -917,7 +917,7 @@ impl Render for TerminalPanel {
             .on_action(cx.listener(|this, _: &super::panel::PrevTab, window, cx| {
                 this.cycle(-1, window, cx);
             }))
-            .bg(crate::view::root::content_bg(&theme))
+            .bg(crate::view::root::content_bg(&theme, cx))
             .child(
                 div()
                     .h(px(40.))
