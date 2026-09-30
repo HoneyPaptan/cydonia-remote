@@ -272,6 +272,7 @@ impl Render for TextField {
             .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::copy))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
+            .on_mouse_down(MouseButton::Right, cx.listener(Self::open_menu))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_tap_release))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
@@ -294,6 +295,7 @@ impl Render for TextField {
             .line_height(px(self.metrics.line_height()))
             .text_color(theme.text)
             .child(TextFieldElement { field: cx.entity() })
+            .children(self.menu_layer(_window, cx))
     }
 }
 

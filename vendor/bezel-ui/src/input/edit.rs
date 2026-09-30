@@ -227,6 +227,7 @@ impl TextField {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.touch_menu = None;
         self.is_selecting = true;
         let offset = self.index_for_mouse_position(event.position, self.line_height());
         if event.modifiers.shift {

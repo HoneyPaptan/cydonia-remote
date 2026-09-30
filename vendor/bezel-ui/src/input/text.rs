@@ -146,3 +146,11 @@ pub fn next_word_boundary(text: &str, offset: usize) -> usize {
         .map(|(start, segment)| start + segment.len())
         .unwrap_or(text.len())
 }
+
+pub fn word_around(text: &str, offset: usize) -> Range<usize> {
+    text.split_word_bound_indices()
+        .map(|(start, word)| start..start + word.len())
+        .find(|range| range.start <= offset && offset < range.end)
+        .filter(|range| !text[range.clone()].trim().is_empty())
+        .unwrap_or(offset..offset)
+}

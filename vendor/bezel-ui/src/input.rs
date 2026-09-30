@@ -34,6 +34,7 @@ mod edit;
 mod element;
 mod ime;
 mod text;
+mod touch_menu;
 
 pub use element::*;
 pub use text::*;
@@ -387,6 +388,7 @@ pub struct TextField {
     last_layout: Vec<WrappedLine>,
     last_bounds: Option<Bounds<Pixels>>,
     is_selecting: bool,
+    touch_menu: Option<Point<Pixels>>,
     /// The column vertical motion is trying to keep, in pixels from the left of
     /// the row. Held across a run of up/down so that walking through a short
     /// line and out the other side returns to the column you started in, and
@@ -454,6 +456,7 @@ impl TextField {
             last_layout: Vec::new(),
             last_bounds: None,
             is_selecting: false,
+            touch_menu: None,
             goal_x: None,
             scroll: Point::default(),
             history: crate::history::SnapshotHistory::new(DEFAULT_UNDO_LIMIT),

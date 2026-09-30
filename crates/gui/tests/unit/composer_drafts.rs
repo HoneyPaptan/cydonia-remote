@@ -189,3 +189,14 @@ fn editing_queued_images_restores_attachments_and_preserves_draft(cx: &mut TestA
         });
     });
 }
+
+#[test]
+fn a_long_press_inside_a_word_takes_the_whole_word() {
+    assert_eq!(bezel::ui::input::word_around("hello brave world", 8), 6..11);
+}
+
+#[test]
+fn a_long_press_on_a_space_or_past_the_end_takes_nothing() {
+    assert_eq!(bezel::ui::input::word_around("hello brave", 5), 5..5);
+    assert_eq!(bezel::ui::input::word_around("hello", 5), 5..5);
+}
