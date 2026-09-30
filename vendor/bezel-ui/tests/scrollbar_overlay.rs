@@ -464,3 +464,46 @@ fn a_bar_fades_after_the_pointer_leaves_the_window_across_its_track(cx: &mut Tes
         );
     }
 }
+
+struct Strip {
+    content_width: gpui::Pixels,
+}
+
+impl Render for Strip {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().size_full().child(scrollbars::Viewport::new(
+            "strip",
+            div()
+                .id("strip-content")
+                .flex()
+                .overflow_x_scroll()
+                .child(div().flex_none().w(self.content_width).h(px(40.))),
+            Axis::Horizontal,
+        ))
+    }
+}
+
+fn swipe_is_claimed_at_strip(content_width: f32, cx: &mut TestAppContext) -> bool {
+    ui::touch::forget();
+    cx.update(|cx| scrollbars::set_visibility(Scrollbars::Always, cx));
+    let window = cx.add_window(|_, _| Strip {
+        content_width: px(content_width),
+    });
+    let mut cx = VisualTestContext::from_window(window.into(), cx);
+    cx.simulate_resize(size(px(200.), px(200.)));
+    for _ in 0..3 {
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+    }
+    cx.update(|window, cx| ui::touch::scrolls_sideways_at(point(px(100.), px(20.)), window, cx))
+}
+
+#[gpui::test]
+fn a_horizontal_viewport_claims_touches_while_it_overflows(cx: &mut TestAppContext) {
+    assert!(swipe_is_claimed_at_strip(600., cx));
+}
+
+#[gpui::test]
+fn a_horizontal_viewport_that_fits_leaves_touches_alone(cx: &mut TestAppContext) {
+    assert!(!swipe_is_claimed_at_strip(100., cx));
+}

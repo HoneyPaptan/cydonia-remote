@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use gpui::{App, Bounds, IntoElement, Pixels, Point, Styled, Window, canvas, px, size};
+use gpui::{App, Bounds, IntoElement, Pixels, Point, ScrollHandle, Styled, Window, canvas, px, size};
 
 use crate::cover::{self, Mark};
 
@@ -24,6 +24,11 @@ pub fn forget() {
 
 pub fn sideways() -> impl IntoElement {
     mark(Kind::Sideways).inset_0()
+}
+
+pub fn sideways_when_overflowing(handle: &ScrollHandle) -> impl IntoElement {
+    let handle = handle.clone();
+    marked_when(Kind::Sideways, move || handle.max_offset().x > px(0.)).inset_0()
 }
 
 pub fn scrolls() -> impl IntoElement {
@@ -76,9 +81,15 @@ fn found(kind: Kind, position: Point<Pixels>, window: &Window, cx: &App) -> Opti
 }
 
 fn mark(kind: Kind) -> gpui::Canvas<()> {
+    marked_when(kind, || true)
+}
+
+fn marked_when(kind: Kind, present: impl FnOnce() -> bool + 'static) -> gpui::Canvas<()> {
     canvas(
         move |bounds, window, _| {
-            record(kind, bounds.intersect(&window.content_mask().bounds));
+            if present() {
+                record(kind, bounds.intersect(&window.content_mask().bounds));
+            }
         },
         |_, _, _, _| {},
     )

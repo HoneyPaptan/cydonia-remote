@@ -6,6 +6,7 @@ use gpui::{
     IntoElement, MouseButton, Pixels, RenderOnce, ScrollHandle, SharedString, Stateful, Window,
     canvas, div, point, prelude::*, px,
 };
+use crate::touch;
 use motion::Painter;
 use std::{cell::Cell, rc::Rc};
 use theme::ink;
@@ -131,6 +132,9 @@ impl RenderOnce for Viewport {
             .min_w_0()
             .when(self.fill, |el| el.flex_1().min_h_0().flex().flex_col())
             .child(scroll::scrolls(self.content, axes).track_scroll(&handle))
+            .when(self.axis == Axis::Horizontal, |el| {
+                el.child(touch::sideways_when_overflowing(&handle))
+            })
             .child(Overlay::new(self.id, &handle, self.axis))
     }
 }
