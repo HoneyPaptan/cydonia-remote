@@ -98,6 +98,35 @@
 			window.addEventListener('contextmenu', keepLongPressesInsideTheApp, true);
 			document.addEventListener('selectstart', keepLongPressesInsideTheApp, true);
 
+			function copyThroughASelection(text) {
+				const field = document.createElement('textarea');
+				field.value = text;
+				field.readOnly = true;
+				field.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+				const previous = document.activeElement;
+				document.body.appendChild(field);
+				field.select();
+				try {
+					return document.execCommand('copy');
+				} finally {
+					field.remove();
+					previous?.focus?.();
+				}
+			}
+			function offerAClipboardWhereThePageIsNotSecure() {
+				if (navigator.clipboard) return;
+				const clipboard = {
+					writeText: (text) =>
+						copyThroughASelection(text)
+							? Promise.resolve()
+							: Promise.reject(new DOMException('Copy was refused', 'NotAllowedError')),
+					read: () =>
+						Promise.reject(new DOMException('Reading needs a secure page', 'NotAllowedError')),
+				};
+				Object.defineProperty(navigator, 'clipboard', { value: clipboard });
+			}
+			offerAClipboardWhereThePageIsNotSecure();
+
 			function putTheKeyboardAway() {
 				const active = document.activeElement;
 				if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)
