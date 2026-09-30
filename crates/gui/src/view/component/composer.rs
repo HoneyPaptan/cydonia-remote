@@ -5,6 +5,7 @@ mod activity;
 pub use activity::Activity;
 
 use super::image_preview::{self, disc};
+use super::transcript::tokens;
 use crate::{
     model::{
         media::Attachment,
@@ -1336,30 +1337,23 @@ impl Composer {
                 )
                 .into_any_element();
         };
-        let percent = (fraction * 100.).round() as u32;
         let (used, size) = (usage.used, usage.size);
-        row
-            // The raw counts would be noise in a row of words, and the tooltip
-            // has them for whoever wants them.
-            .tooltip(move |window, cx| {
-                Tooltip::text(format!("{used} of {size} tokens"), window, cx)
-            })
-            .child(
-                div()
-                    .w(px(44.))
-                    .flex_none()
-                    .child(theme.progress_bar(fraction)),
-            )
-            .child(
-                div()
-                    .text_style(TextStyle::Caption)
-                    .text_color(match fraction >= WARN_AT {
-                        true => theme.warning,
-                        false => theme.text_faint,
-                    })
-                    .child(format!("{percent}%")),
-            )
-            .into_any_element()
+        row.child(
+            div()
+                .w(px(44.))
+                .flex_none()
+                .child(theme.progress_bar(fraction)),
+        )
+        .child(
+            div()
+                .text_style(TextStyle::Caption)
+                .text_color(match fraction >= WARN_AT {
+                    true => theme.warning,
+                    false => theme.text_faint,
+                })
+                .child(format!("{} / {}", tokens(used), tokens(size))),
+        )
+        .into_any_element()
     }
 
     /// Show Send only for a draft; keep Stop available throughout a turn.

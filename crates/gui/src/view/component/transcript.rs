@@ -1571,12 +1571,14 @@ fn since(elapsed: Duration) -> String {
     }
 }
 
-/// Tokens, thinned to the digits that carry: `840`, `4.2k`, `128k`.
-fn tokens(spent: u64) -> String {
+/// Tokens, thinned to the digits that carry: `840`, `4.2k`, `128k`, `1M`.
+pub(super) fn tokens(spent: u64) -> String {
     match spent {
         n if n < 1_000 => n.to_string(),
         n if n < 100_000 => format!("{:.1}k", n as f64 / 1_000.),
-        n => format!("{}k", n / 1_000),
+        n if n < 1_000_000 => format!("{}k", n / 1_000),
+        n if n % 1_000_000 == 0 => format!("{}M", n / 1_000_000),
+        n => format!("{:.1}M", n as f64 / 1_000_000.),
     }
 }
 
