@@ -91,9 +91,7 @@
 			window.addEventListener('pointerleave', keepLiftedFingersFromLeavingTheCanvas, true);
 
 			function keepLongPressesInsideTheApp(event) {
-				const target = event.target;
-				const editable = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
-				if (!editable) event.preventDefault();
+				event.preventDefault();
 			}
 			window.addEventListener('contextmenu', keepLongPressesInsideTheApp, true);
 			document.addEventListener('selectstart', keepLongPressesInsideTheApp, true);
