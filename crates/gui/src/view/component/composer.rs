@@ -330,6 +330,7 @@ pub struct Composer {
     /// [`PICKER_HEIGHT`]: arrowing past the last visible row has to bring
     /// the row it landed on back into view.
     scroll: ScrollHandle,
+    tray_scroll: ScrollHandle,
     /// Whether a turn is in flight — what the button does when pressed.
     streaming: bool,
     activity: Option<Activity>,
@@ -407,6 +408,7 @@ impl Composer {
             picks: Sigil::ALL.map(|sigil| Pick::new(sigil, Vec::new())),
             project: None,
             scroll: ScrollHandle::new(),
+            tray_scroll: ScrollHandle::new(),
             streaming: false,
             activity: None,
             activity_open: false,
@@ -807,16 +809,22 @@ impl Composer {
         });
         Some(
             div()
-                // Room above for the half of each remove button past its
-                // corner, and between the pictures and the line under them.
-                .pt(px(REMOVE / 2. + 4.))
-                .pr(px(REMOVE / 2.))
-                .pb(px(8.))
-                .flex()
-                .flex_row()
-                .flex_wrap()
-                .gap(px(12.))
-                .children(thumbs)
+                .relative()
+                .min_w_0()
+                .child(
+                    div()
+                        .id("composer-attachment-row")
+                        .pt(px(REMOVE / 2. + 4.))
+                        .pb(px(8.))
+                        .flex()
+                        .flex_row()
+                        .gap(px(12.))
+                        .overflow_x_scroll()
+                        .track_scroll(&self.tray_scroll)
+                        .children(thumbs.map(|thumb| thumb.flex_none()))
+                        .child(div().flex_none().w(px(REMOVE / 2.))),
+                )
+                .child(bezel::ui::touch::sideways())
                 .into_any_element(),
         )
     }
