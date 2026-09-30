@@ -15,6 +15,8 @@ mod hosts;
 #[cfg(target_family = "wasm")]
 mod keeper;
 #[cfg(target_family = "wasm")]
+mod keyboard;
+#[cfg(target_family = "wasm")]
 mod paste;
 #[cfg(target_family = "wasm")]
 mod pick;

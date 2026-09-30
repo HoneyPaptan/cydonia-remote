@@ -12,7 +12,7 @@ use crate::{
         pick,
         pictures::Fit,
         session::{Command, Usage},
-        mentions,
+        keyboard, mentions,
     },
     view::root,
 };
@@ -212,6 +212,7 @@ pub fn bindings() -> Vec<KeyBinding> {
         // Bound explicitly: the field's own `enter` is what usually inserts a
         // newline, and the composer has just taken it.
         KeyBinding::new("shift-enter", input::InsertNewline, ctx),
+        KeyBinding::new("ctrl-enter", input::InsertNewline, ctx),
         KeyBinding::new("down", CommandNext, ctx),
         KeyBinding::new("up", CommandPrevious, ctx),
         KeyBinding::new("escape", CommandDismiss, ctx),
@@ -893,7 +894,12 @@ impl Composer {
         cx.notify();
     }
 
-    fn send(&mut self, _: &Send, _: &mut Window, cx: &mut Context<Self>) {
+    fn send(&mut self, _: &Send, window: &mut Window, cx: &mut Context<Self>) {
+        let picking = self.current().and_then(|pick| pick.filter.active_item()).is_some();
+        if keyboard::enter_breaks_line() && !picking {
+            window.dispatch_action(Box::new(input::InsertNewline), cx);
+            return;
+        }
         self.submit(cx);
     }
 
