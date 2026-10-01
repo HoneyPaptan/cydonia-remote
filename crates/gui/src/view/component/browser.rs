@@ -3,10 +3,11 @@
 //! A tab holds a tab id, not the page. Pages live in [`Pages`], app-wide, so a
 //! panel or window dropping does not drop them; only closing the tab does.
 
+use crate::model::{relay, servers};
 use bezel::{
     gpui::{
-        self, App, Context, Entity, EventEmitter, FocusHandle, Focusable, Global, KeyBinding,
-        Subscription, Window, actions, div, prelude::*, px,
+        self, AnyElement, App, Context, Entity, EventEmitter, FocusHandle, Focusable, Global,
+        KeyBinding, Subscription, Task, Window, actions, div, prelude::*, px,
     },
     motion::{Fade, Painter},
     theme::{TextStyle, Theme, Typeset},
@@ -22,15 +23,20 @@ use browser::WebView;
 use browser::WebViewEvent;
 #[cfg(target_family = "wasm")]
 use phone::Page as WebView;
-use std::collections::HashMap;
+use remote::proto::{Answer, LocalServer, Query};
+use std::{collections::HashMap, time::Duration};
+use web_time::Instant;
 
 actions!(cydonia_browser, [Go]);
 
 /// Claimed on the address field, so `enter` loads what it holds.
 const ADDRESS_CONTEXT: &str = "CydoniaAddress";
 
-/// What a new tab opens on.
-pub const HOME: &str = "https://duckduckgo.com";
+const REFRESH: Duration = Duration::from_secs(1);
+const STOPPING: Duration = Duration::from_secs(8);
+const SHARE_WAIT: Duration = Duration::from_millis(100);
+const SHARE_TRIES: usize = 40;
+const LISTING_TITLE: &str = "Servers";
 
 pub fn bindings() -> Vec<KeyBinding> {
     vec![KeyBinding::new("enter", Go, Some(ADDRESS_CONTEXT))]
@@ -77,6 +83,12 @@ pub struct Browser {
     address: Entity<TextField>,
     focus: FocusHandle,
     _page: Option<Subscription>,
+    servers: Vec<LocalServer>,
+    loaded: bool,
+    stopping: HashMap<u16, Instant>,
+    opening: Option<u16>,
+    note: Option<String>,
+    _refresh: Task<()>,
 }
 
 impl EventEmitter<Changed> for Browser {}
@@ -97,7 +109,29 @@ impl Browser {
             address,
             focus: cx.focus_handle(),
             _page: None,
+            servers: Vec::new(),
+            loaded: false,
+            stopping: HashMap::new(),
+            opening: None,
+            note: None,
+            _refresh: cx.spawn(async move |this, cx| {
+                loop {
+                    cx.background_executor().timer(REFRESH).await;
+                    let alive = this.update(cx, |this, cx| {
+                        if this.listing() {
+                            cx.notify();
+                        }
+                    });
+                    if alive.is_err() {
+                        break;
+                    }
+                }
+            }),
         }
+    }
+
+    fn listing(&self) -> bool {
+        self.url.is_empty()
     }
 
     pub fn url(&self) -> &str {
@@ -106,15 +140,13 @@ impl Browser {
 
     /// The page's title, or its location while it has none.
     pub fn title(&self) -> &str {
-        if self.title.is_empty() {
+        if self.listing() {
+            LISTING_TITLE
+        } else if self.title.is_empty() {
             &self.url
         } else {
             &self.title
         }
-    }
-
-    pub fn address_focus(&self, cx: &App) -> FocusHandle {
-        self.address.focus_handle(cx)
     }
 
     fn page(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Entity<WebView> {
@@ -164,6 +196,78 @@ impl Browser {
         cx.notify();
     }
 
+    fn show(&mut self, url: String, window: &mut Window, cx: &mut Context<Self>) {
+        forget(self.id, cx);
+        self.page = None;
+        self._page = None;
+        self.title.clear();
+        self.address
+            .update(cx, |field, cx| field.set_content(url.clone(), cx));
+        self.url = url;
+        self.note = None;
+        window.focus(&self.focus, cx);
+        cx.emit(Changed);
+        cx.notify();
+    }
+
+    fn show_list(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show(String::new(), window, cx);
+    }
+
+    fn refresh_servers(&mut self) {
+        let Ok(listed) = servers::list() else {
+            return;
+        };
+        self.loaded = true;
+        self.stopping.retain(|port, at| {
+            at.elapsed() < STOPPING && listed.iter().any(|server| server.port == *port)
+        });
+        self.servers = listed
+            .into_iter()
+            .filter(|server| !self.stopping.contains_key(&server.port))
+            .collect();
+    }
+
+    fn stop(&mut self, server: &LocalServer, cx: &mut Context<Self>) {
+        self.stopping.insert(server.port, Instant::now());
+        servers::stop(server);
+        cx.notify();
+    }
+
+    fn open(&mut self, server: &LocalServer, window: &mut Window, cx: &mut Context<Self>) {
+        let url = format!("http://localhost:{}/", server.port);
+        if !cfg!(target_family = "wasm") || server.shared {
+            self.show(url, window, cx);
+            return;
+        }
+        let query = Query::Expose { port: server.port };
+        relay::take(&query);
+        relay::tell(query.clone());
+        self.opening = Some(server.port);
+        self.note = None;
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx| {
+            let mut answer = None;
+            for _ in 0..SHARE_TRIES {
+                cx.background_executor().timer(SHARE_WAIT).await;
+                answer = relay::take(&query);
+                if answer.is_some() {
+                    break;
+                }
+            }
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.opening = None;
+                match answer {
+                    Some(Answer::Exposed) => this.show(url, window, cx),
+                    Some(Answer::Failed { message }) => this.note = Some(message),
+                    _ => this.note = Some("The laptop did not answer".to_owned()),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn go(&mut self, _: &Go, window: &mut Window, cx: &mut Context<Self>) {
         let typed = self.address.read(cx).content().trim().to_owned();
         if typed.is_empty() {
@@ -184,16 +288,17 @@ impl Browser {
     }
 }
 
-/// What the address field's text loads: a URL as typed, a bare host over
-/// https, anything else as a search.
+/// What the address field's text loads: a URL as typed, a bare port on this
+/// laptop, a bare host over https.
 fn address(typed: &str) -> String {
     if typed.contains("://") || typed.starts_with("about:") {
         typed.to_owned()
-    } else if !typed.contains(char::is_whitespace) && typed.contains('.') {
-        format!("https://{typed}")
+    } else if typed.chars().all(|c| c.is_ascii_digit()) {
+        format!("http://localhost:{typed}")
+    } else if typed.starts_with("localhost") || typed.starts_with("127.") {
+        format!("http://{typed}")
     } else {
-        let query: String = url::form_urlencoded::byte_serialize(typed.as_bytes()).collect();
-        format!("{HOME}/?q={query}")
+        format!("https://{typed}")
     }
 }
 
@@ -203,6 +308,121 @@ impl Focusable for Browser {
             Some(page) => page.focus_handle(cx),
             None => self.focus.clone(),
         }
+    }
+}
+
+impl Browser {
+    fn listing_view(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        self.refresh_servers();
+        let theme = Theme::of(cx).clone();
+        let caption = |text: String| {
+            div()
+                .flex_none()
+                .px(px(12.))
+                .py(px(8.))
+                .text_style(TextStyle::Caption)
+                .text_color(theme.text_muted)
+                .child(text)
+        };
+        let rows: Vec<AnyElement> = self
+            .servers
+            .clone()
+            .into_iter()
+            .map(|server| self.server_row(server, &theme, cx))
+            .collect();
+        let status = match (self.loaded, rows.is_empty()) {
+            (false, _) => Some("Looking for running servers"),
+            (true, true) => Some("Nothing is running on this laptop yet. Start a dev server and it shows up here."),
+            _ => None,
+        };
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .track_focus(&self.focus)
+            .child(caption("Running on this laptop".to_owned()))
+            .children(self.note.clone().map(caption))
+            .children(status.map(|text| caption(text.to_owned())))
+            .child(
+                div()
+                    .id("running-servers")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .px(px(6.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.))
+                    .children(rows),
+            )
+            .into_any_element()
+    }
+
+    fn server_row(
+        &self,
+        server: LocalServer,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let port = server.port;
+        let primary = server
+            .title
+            .clone()
+            .or_else(|| server.folder.clone())
+            .unwrap_or_else(|| server.process.clone());
+        let mut details = vec![format!(":{port}"), server.process.clone()];
+        details.extend(server.folder.clone().filter(|folder| *folder != primary));
+        let secondary = if self.opening == Some(port) {
+            "Opening".to_owned()
+        } else {
+            details.join(" · ")
+        };
+        let (open, stop) = (server.clone(), server);
+        div()
+            .id(("server", usize::from(port)))
+            .flex_none()
+            .h(px(52.))
+            .flex()
+            .items_center()
+            .gap(px(10.))
+            .px(px(10.))
+            .rounded(px(8.))
+            .cursor_pointer()
+            .hover(|row| row.bg(theme.element_hover))
+            .child(
+                icons::icon(icons::development::Server)
+                    .size(px(16.))
+                    .flex_none()
+                    .text_color(theme.text_muted),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .child(div().truncate().text_style(TextStyle::Body).child(primary))
+                    .child(
+                        div()
+                            .truncate()
+                            .text_style(TextStyle::Caption)
+                            .text_color(theme.text_muted)
+                            .child(secondary),
+                    ),
+            )
+            .child(
+                theme
+                    .icon_button(icons::notifications::X, ButtonStyle::Ghost, None)
+                    .id(("server-stop", usize::from(port)))
+                    .flex_none()
+                    .tooltip(|window, cx| Tooltip::text("Stop this server", window, cx))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
+                        this.stop(&stop, cx);
+                    })),
+            )
+            .on_click(cx.listener(move |this, _, window, cx| this.open(&open, window, cx)))
+            .into_any_element()
     }
 }
 
@@ -221,6 +441,9 @@ impl Render for Browser {
                 .text_color(theme.text_muted)
                 .child("The browser needs X11. This session runs on Wayland.")
                 .into_any_element();
+        }
+        if self.listing() {
+            return self.listing_view(cx);
         }
         let page = self.page(window, cx);
         let theme = Theme::of(cx).clone();
@@ -254,6 +477,14 @@ impl Render for Browser {
                     .py(px(4.))
                     .border_b_1()
                     .border_color(theme.border)
+                    .child(
+                        nav(
+                            icons::development::Server,
+                            "browser-servers",
+                            "Running servers",
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| this.show_list(window, cx))),
+                    )
                     .child(
                         nav(icons::arrows::ArrowLeft, "browser-back", "Back")
                             .on_click(move |_, _, cx| {

@@ -393,9 +393,9 @@ impl Panel {
             return;
         }
         let id = super::browser::new_id();
-        let browser = self.browser(id, super::browser::HOME.into(), String::new(), cx);
-        let address = browser.read(cx).address_focus(cx);
-        window.focus(&address, cx);
+        let browser = self.browser(id, String::new(), String::new(), cx);
+        let focus = browser.focus_handle(cx);
+        window.focus(&focus, cx);
     }
 
     /// Step to the tab `step` along, wrapping at the ends — the row is a ring,
