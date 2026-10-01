@@ -248,9 +248,9 @@ impl Local for Laptop {
                     agents: crate::agent::catalogue(),
                 };
             }
-            Query::Servers => {
+            Query::Servers { root } => {
                 return Answer::Servers {
-                    servers: servers::fresh(),
+                    servers: servers::inside(servers::fresh(), std::path::Path::new(root)),
                 };
             }
             Query::Expose { port } => {
@@ -289,7 +289,7 @@ impl Local for Laptop {
             | Query::Mentions { .. }
             | Query::Folders { .. }
             | Query::MakeFolder { .. }
-            | Query::Servers
+            | Query::Servers { .. }
             | Query::Expose { .. }
             | Query::Stop { .. } => failed("Not a path"),
         }

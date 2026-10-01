@@ -24,7 +24,7 @@ use browser::WebViewEvent;
 #[cfg(target_family = "wasm")]
 use phone::Page as WebView;
 use remote::proto::{Answer, LocalServer, Query};
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, path::PathBuf, time::Duration};
 use web_time::Instant;
 
 actions!(cydonia_browser, [Go]);
@@ -83,6 +83,7 @@ pub struct Browser {
     address: Entity<TextField>,
     focus: FocusHandle,
     _page: Option<Subscription>,
+    root: PathBuf,
     servers: Vec<LocalServer>,
     loaded: bool,
     stopping: HashMap<u16, Instant>,
@@ -94,7 +95,13 @@ pub struct Browser {
 impl EventEmitter<Changed> for Browser {}
 
 impl Browser {
-    pub fn new(id: u64, url: String, title: String, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        id: u64,
+        url: String,
+        title: String,
+        root: PathBuf,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let address = cx.new(|cx| {
             TextField::new(cx)
                 .with_key_context(ADDRESS_CONTEXT)
@@ -109,6 +116,7 @@ impl Browser {
             address,
             focus: cx.focus_handle(),
             _page: None,
+            root,
             servers: Vec::new(),
             loaded: false,
             stopping: HashMap::new(),
@@ -215,7 +223,7 @@ impl Browser {
     }
 
     fn refresh_servers(&mut self) {
-        let Ok(listed) = servers::list() else {
+        let Ok(listed) = servers::list(&self.root) else {
             return;
         };
         self.loaded = true;

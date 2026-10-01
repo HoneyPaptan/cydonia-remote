@@ -114,3 +114,20 @@ fn only_a_listed_server_can_be_stopped_or_shared() {
     assert!(servers::stop_now(1, port).is_err());
     assert!(servers::expose(free_port(), &["10.0.0.1".parse().unwrap()]).is_err());
 }
+
+#[test]
+fn only_servers_started_inside_the_folder_are_kept() {
+    let port = free_port();
+    let dir = page_dir();
+    let _site = Site::start(port, &dir);
+    let listed = servers::fresh();
+
+    let here = servers::inside(listed.clone(), &dir);
+    assert!(here.iter().any(|server| server.port == port));
+
+    let elsewhere = servers::inside(
+        listed,
+        &std::env::temp_dir().join("cydonia-no-such-folder"),
+    );
+    assert!(elsewhere.is_empty());
+}

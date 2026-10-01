@@ -380,7 +380,8 @@ impl Panel {
         title: String,
         cx: &mut Context<Self>,
     ) -> Entity<Browser> {
-        let browser = cx.new(|cx| Browser::new(id, url, title, cx));
+        let root = self.cwd.clone();
+        let browser = cx.new(|cx| Browser::new(id, url, title, root, cx));
         let changed = cx.subscribe(&browser, |_, _, _: &super::browser::Changed, cx| {
             cx.notify()
         });

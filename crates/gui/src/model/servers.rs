@@ -2,9 +2,10 @@ use super::relay::Pending;
 use remote::proto::LocalServer;
 
 #[cfg(not(feature = "desktop"))]
-pub fn list() -> Result<Vec<LocalServer>, Pending> {
+pub fn list(root: &std::path::Path) -> Result<Vec<LocalServer>, Pending> {
     use remote::proto::{Answer, Query};
-    match super::relay::ask(Query::Servers) {
+    let root = root.to_string_lossy().into_owned();
+    match super::relay::ask(Query::Servers { root }) {
         Ok(Answer::Servers { servers }) => Ok(servers),
         Ok(_) => Ok(Vec::new()),
         Err(pending) => Err(pending),
@@ -20,8 +21,10 @@ pub fn stop(server: &LocalServer) {
 }
 
 #[cfg(feature = "desktop")]
-pub fn list() -> Result<Vec<LocalServer>, Pending> {
-    scan::seen().ok_or(Pending)
+pub fn list(root: &std::path::Path) -> Result<Vec<LocalServer>, Pending> {
+    scan::seen()
+        .map(|servers| scan::inside(servers, root))
+        .ok_or(Pending)
 }
 
 #[cfg(feature = "desktop")]
@@ -33,7 +36,7 @@ pub fn stop(server: &LocalServer) {
 }
 
 #[cfg(feature = "desktop")]
-pub use scan::{expose, fresh, stop as stop_now};
+pub use scan::{expose, fresh, inside, stop as stop_now};
 
 #[cfg(feature = "desktop")]
 mod scan {
@@ -146,6 +149,17 @@ mod scan {
     fn folder(pid: u32) -> Option<String> {
         let cwd = std::fs::read_link(format!("/proc/{pid}/cwd")).ok()?;
         Some(cwd.file_name()?.to_string_lossy().into_owned())
+    }
+
+    pub fn inside(servers: Vec<LocalServer>, root: &std::path::Path) -> Vec<LocalServer> {
+        let root = root.canonicalize().unwrap_or_else(|_| root.to_owned());
+        servers
+            .into_iter()
+            .filter(|server| {
+                std::fs::read_link(format!("/proc/{}/cwd", server.pid))
+                    .is_ok_and(|cwd| cwd.starts_with(&root))
+            })
+            .collect()
     }
 
     fn title_of(host: &str, port: u16) -> Option<Option<String>> {

@@ -413,7 +413,7 @@ pub enum Query {
     Folders { path: String },
     MakeFolder { path: String },
     Mentions { project: String },
-    Servers,
+    Servers { root: String },
     Expose { port: u16 },
     Stop { pid: u32, port: u16 },
 }
