@@ -300,6 +300,12 @@ mod scan {
         if pid <= 1 || pid == std::process::id() {
             return Err("That one is not stoppable".to_owned());
         }
+        if !fresh()
+            .iter()
+            .any(|server| server.pid == pid && server.port == port)
+        {
+            return Err("That is not one of the listed servers".to_owned());
+        }
         if !listening(pid, port) {
             invalidate();
             return Ok(());
@@ -349,6 +355,9 @@ mod scan {
     }
 
     pub fn expose(port: u16, hosts: &[IpAddr]) -> Result<(), String> {
+        if !fresh().iter().any(|server| server.port == port) {
+            return Err("That is not one of the listed servers".to_owned());
+        }
         let mut forwards = locked(&FORWARDS);
         let forwards = forwards.get_or_insert_default();
         if forwards.contains_key(&port) {

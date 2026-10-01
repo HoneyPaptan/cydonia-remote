@@ -103,3 +103,14 @@ fn a_loopback_site_is_reachable_through_a_shared_address() {
 fn a_port_with_no_network_address_cannot_be_shared() {
     assert!(servers::expose(free_port(), &[]).is_err());
 }
+
+#[test]
+fn only_a_listed_server_can_be_stopped_or_shared() {
+    let port = free_port();
+    let _site = Site::start(port, &page_dir());
+    let own = std::process::id();
+
+    assert!(servers::stop_now(own, port).is_err());
+    assert!(servers::stop_now(1, port).is_err());
+    assert!(servers::expose(free_port(), &["10.0.0.1".parse().unwrap()]).is_err());
+}
