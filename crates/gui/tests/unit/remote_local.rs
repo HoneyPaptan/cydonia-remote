@@ -22,7 +22,7 @@ impl Scratch {
             projects: vec![ProjectView::new(self.0.join("project").to_string_lossy())],
             ..Mirror::default()
         });
-        Laptop::new(hub)
+        Laptop::new(hub, Vec::new())
     }
 
     fn path(&self, rest: &str) -> String {

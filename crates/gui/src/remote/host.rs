@@ -175,7 +175,10 @@ pub fn start(workspace: Entity<Workspace>, options: Options, cx: &mut App) -> Re
         Config {
             token: options.token.clone(),
             ui: options.ui,
-            local: Some(super::local::Laptop::new(hub.clone())),
+            local: Some(super::local::Laptop::new(
+                hub.clone(),
+                options.listen.iter().map(SocketAddr::ip).collect(),
+            )),
             receipts: options.receipts,
             step_down: options.step_down,
         },

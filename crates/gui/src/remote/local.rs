@@ -1,4 +1,7 @@
-use crate::{model::git, view::component::terminal::Shell};
+use crate::{
+    model::{git, servers},
+    view::component::terminal::Shell,
+};
 use futures::{StreamExt as _, channel::mpsc};
 use portable_pty::PtySize;
 use remote::{
@@ -12,6 +15,7 @@ use remote::{
 use std::{
     ffi::OsString,
     io::Read as _,
+    net::IpAddr,
     path::{Component, Path, PathBuf},
     sync::{Arc, mpsc as channel},
     time::Duration,
@@ -41,11 +45,12 @@ const SETTLE: Duration = Duration::from_millis(12);
 
 pub struct Laptop {
     hub: Arc<Hub>,
+    hosts: Vec<IpAddr>,
 }
 
 impl Laptop {
-    pub fn new(hub: Arc<Hub>) -> Arc<Self> {
-        Arc::new(Self { hub })
+    pub fn new(hub: Arc<Hub>, hosts: Vec<IpAddr>) -> Arc<Self> {
+        Arc::new(Self { hub, hosts })
     }
 
     fn roots(&self) -> Vec<PathBuf> {
@@ -243,6 +248,23 @@ impl Local for Laptop {
                     agents: crate::agent::catalogue(),
                 };
             }
+            Query::Servers => {
+                return Answer::Servers {
+                    servers: servers::fresh(),
+                };
+            }
+            Query::Expose { port } => {
+                return match servers::expose(*port, &self.hosts) {
+                    Ok(()) => Answer::Exposed,
+                    Err(message) => failed(message),
+                };
+            }
+            Query::Stop { pid, port } => {
+                return match servers::stop_now(*pid, *port) {
+                    Ok(()) => Answer::Stopped,
+                    Err(message) => failed(message),
+                };
+            }
             Query::Mentions { project } => {
                 return match self.inside(Path::new(project)) {
                     Some(project) => Answer::Mentions(crate::model::mentions::of(&project)),
@@ -263,9 +285,13 @@ impl Local for Laptop {
             Query::ReadFile { .. } => read_file(&path),
             Query::WriteFile { text, .. } => write_file(&path, text),
             Query::Git { args, .. } => run_git(&path, args),
-            Query::Agents | Query::Mentions { .. } | Query::Folders { .. } | Query::MakeFolder { .. } => {
-                failed("Not a path")
-            }
+            Query::Agents
+            | Query::Mentions { .. }
+            | Query::Folders { .. }
+            | Query::MakeFolder { .. }
+            | Query::Servers
+            | Query::Expose { .. }
+            | Query::Stop { .. } => failed("Not a path"),
         }
     }
 

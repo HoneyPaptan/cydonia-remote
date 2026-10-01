@@ -86,5 +86,5 @@ gpui_platform = { version = "0.3.11", package = "bezel-gpui-platform", features 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
 gpui_platform = { version = "0.3.13", package = "bezel-gpui-platform", features = ["wayland", "x11"], optional = true }
 
-[target.'cfg(target_os = "macos")'.dependencies]
+[target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -21,6 +21,7 @@ pub mod pick;
 pub mod pictures;
 pub mod project;
 pub mod relay;
+pub mod servers;
 pub mod session;
 pub mod session_preferences;
 pub mod settings;
