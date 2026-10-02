@@ -2,11 +2,11 @@
 use crate::compute::common::alignment::{compute_alignment_offset, resolve_self_alignment_safety};
 use crate::geometry::{Line, Point, Rect, Size};
 use crate::style::{
-    AlignContent, AlignContentKeyword, AlignItems, AlignItemsKeyword, AlignSelf, AvailableSpace, FlexWrap,
+    AlignContent, AlignContentKeyword, AlignItems, AlignItemsKeyword, AlignSelf, AvailableSpace, Dimension, FlexWrap,
     JustifyContent, LengthPercentageAuto, Overflow, Position,
 };
 use crate::style::{CoreStyle, FlexDirection, FlexboxContainerStyle, FlexboxItemStyle};
-use crate::style_helpers::{TaffyMaxContent, TaffyMinContent};
+use crate::style_helpers::TaffyMaxContent;
 use crate::tree::{Layout, LayoutInput, LayoutOutput, RunMode, SizingMode};
 use crate::tree::{LayoutFlexboxContainer, LayoutPartialTreeExt, NodeId};
 use crate::util::debug::debug_log;
@@ -322,7 +322,7 @@ fn compute_preliminary(tree: &mut impl LayoutFlexboxContainer, node: NodeId, inp
     // 7. Determine the hypothetical cross size of each item.
     debug_log!("determine_hypothetical_cross_size");
     for line in &mut flex_lines {
-        determine_hypothetical_cross_size(tree, line, &constants, available_space);
+        determine_hypothetical_cross_size(tree, line, &constants, available_space, known_dimensions);
     }
 
     // Calculate child baselines. This function is internally smart and only computes child baselines
@@ -662,6 +662,33 @@ fn determine_available_space(
 ///   Furthermore, the sizing calculations that floor the content box size at zero when applying box-sizing are also ignored.
 ///   (For example, an item with a specified size of zero, positive padding, and box-sizing: border-box will have an outer flex base size of zero—and hence a negative inner flex base size.)
 #[inline]
+fn height_ignores_available_space(tree: &impl LayoutFlexboxContainer, node: NodeId) -> bool {
+    let style = tree.get_flexbox_container_style(node);
+    !(style.flex_direction().is_column() && style.flex_wrap() != FlexWrap::NoWrap)
+}
+
+fn sizes_ignore_parent_height(tree: &impl LayoutFlexboxContainer, node: NodeId) -> bool {
+    let style = tree.get_flexbox_child_style(node);
+    let fixed_or_auto = |dimension: Dimension| dimension.is_auto() || dimension.into_option().is_some();
+    style.aspect_ratio().is_none()
+        && fixed_or_auto(style.size().height)
+        && fixed_or_auto(style.min_size().height)
+        && fixed_or_auto(style.max_size().height)
+        && height_ignores_available_space(tree, node)
+}
+
+fn row_item_cross_space(
+    tree: &impl LayoutFlexboxContainer,
+    node: NodeId,
+    dir: FlexDirection,
+    space: AvailableSpace,
+) -> AvailableSpace {
+    match dir.is_row() && sizes_ignore_parent_height(tree, node) {
+        true => AvailableSpace::MaxContent,
+        false => space,
+    }
+}
+
 fn determine_flex_base_size(
     tree: &mut impl LayoutFlexboxContainer,
     constants: &AlgoConstants,
@@ -687,7 +714,8 @@ fn determine_flex_base_size(
         let child_max_cross = transferred_max_size.cross(dir).maybe_add(cross_axis_margin_sum);
 
         // Clamp available space by min- and max- size
-        let cross_axis_available_space: AvailableSpace = match available_space.cross(dir) {
+        let cross_axis_space = row_item_cross_space(tree, child.node, dir, available_space.cross(dir));
+        let cross_axis_available_space: AvailableSpace = match cross_axis_space {
             AvailableSpace::Definite(val) => AvailableSpace::Definite(
                 cross_axis_parent_size.unwrap_or(val).maybe_clamp(child_min_cross, child_max_cross),
             ),
@@ -832,7 +860,13 @@ fn determine_flex_base_size(
 
         child.resolved_minimum_main_size = style_min_main_size.unwrap_or_else(|| {
             let min_content_main_size = {
-                let child_available_space = Size::MIN_CONTENT.with_cross(dir, cross_axis_available_space);
+                let main_axis_space = match dir.is_column() && height_ignores_available_space(tree, child.node) {
+                    true => AvailableSpace::MaxContent,
+                    false => AvailableSpace::MinContent,
+                };
+                let child_available_space = Size::MAX_CONTENT
+                    .with_main(dir, main_axis_space)
+                    .with_cross(dir, cross_axis_available_space);
 
                 debug_log!("COMPUTE CHILD MIN SIZE:");
                 tree.measure_child_size(
@@ -1403,9 +1437,19 @@ fn determine_hypothetical_cross_size(
     line: &mut FlexLine,
     constants: &AlgoConstants,
     available_space: Size<AvailableSpace>,
+    node_size: Size<Option<f32>>,
 ) {
+    let line_takes_container_cross = !constants.is_wrap && node_size.cross(constants.dir).is_some();
     for child in line.items.iter_mut() {
         let padding_border_sum = (child.padding + child.border).cross_axis_sum(constants.dir);
+        if line_takes_container_cross && is_stretched(tree, child, constants) {
+            child.hypothetical_inner_size.set_cross(constants.dir, padding_border_sum);
+            child.hypothetical_outer_size.set_cross(
+                constants.dir,
+                padding_border_sum + child.margin.cross_axis_sum(constants.dir),
+            );
+            continue;
+        }
 
         let child_known_main = constants.container_size.main(constants.dir).into();
 
@@ -1420,10 +1464,14 @@ fn determine_hypothetical_cross_size(
             .maybe_clamp(transferred_min_cross, transferred_max_cross)
             .maybe_max(padding_border_sum);
 
-        let child_available_cross = available_space
-            .cross(constants.dir)
-            .maybe_clamp(transferred_min_cross, transferred_max_cross)
-            .maybe_max(padding_border_sum);
+        let child_available_cross = row_item_cross_space(
+            tree,
+            child.node,
+            constants.dir,
+            available_space.cross(constants.dir),
+        )
+        .maybe_clamp(transferred_min_cross, transferred_max_cross)
+        .maybe_max(padding_border_sum);
 
         let child_inner_cross = child_cross.unwrap_or_else(|| {
             tree.measure_child_size(
@@ -1449,6 +1497,13 @@ fn determine_hypothetical_cross_size(
         child.hypothetical_inner_size.set_cross(constants.dir, child_inner_cross);
         child.hypothetical_outer_size.set_cross(constants.dir, child_outer_cross);
     }
+}
+
+fn is_stretched(tree: &impl LayoutFlexboxContainer, child: &FlexItem, constants: &AlgoConstants) -> bool {
+    child.align_self == AlignSelf::STRETCH
+        && !child.margin_is_auto.cross_start(constants.dir)
+        && !child.margin_is_auto.cross_end(constants.dir)
+        && tree.get_flexbox_child_style(child.node).size().cross(constants.dir).is_auto()
 }
 
 /// Calculate the base lines of the children.
