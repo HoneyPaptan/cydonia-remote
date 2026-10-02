@@ -66,6 +66,10 @@ const SIDEBAR_WIDTH: f32 = 200.;
 pub(super) const GROUP_GAP: f32 = 20.;
 pub(super) const LABEL_GAP: f32 = 8.;
 
+fn column(gap: f32) -> bezel::gpui::Div {
+    div().w_full().flex().flex_col().gap(px(gap))
+}
+
 /// The reading column's cap, `--container-content`. The body is centred in
 /// whatever the window gives it, up to this.
 const CONTENT_MAX_WIDTH: f32 = 860.;

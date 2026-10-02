@@ -43,10 +43,7 @@ impl SettingsWindow {
         let theme = Theme::of(cx).clone();
         self.recheck_hosts(cx);
         let saved = shelf().map(|shelf| shelf.list()).unwrap_or_default();
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(super::GROUP_GAP))
+        super::column(super::GROUP_GAP)
             .child(self.hosts_group("This device", self.this_device(cx), &theme))
             .child(self.hosts_group("Saved hosts", self.saved_hosts(saved, cx), &theme))
             .child(self.hosts_group("Add a host", self.add_host(cx), &theme))
@@ -54,10 +51,7 @@ impl SettingsWindow {
     }
 
     fn hosts_group(&self, label: &'static str, body: AnyElement, theme: &Theme) -> AnyElement {
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(super::LABEL_GAP))
+        super::column(super::LABEL_GAP)
             .child(theme.field_label(label))
             .child(body)
             .into_any_element()

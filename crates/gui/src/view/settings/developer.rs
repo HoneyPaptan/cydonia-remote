@@ -12,7 +12,7 @@ use crate::model::update;
 use crate::view::settings::SettingsWindow;
 #[cfg(feature = "desktop")]
 use crate::view::settings::Switch;
-use bezel::gpui::{AnyElement, Context, div, prelude::*, px};
+use bezel::gpui::{AnyElement, Context, prelude::*};
 #[cfg(feature = "desktop")]
 use bezel::{
     theme::Theme,
@@ -21,10 +21,7 @@ use bezel::{
 
 impl SettingsWindow {
     pub(super) fn developer_body(&self, cx: &Context<Self>) -> AnyElement {
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(super::GROUP_GAP))
+        super::column(super::GROUP_GAP)
             .children(self.notifier_row(cx))
             .into_any_element()
     }

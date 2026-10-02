@@ -177,6 +177,7 @@ pub trait Scaffolding: ThemeExt {
             .border_1()
             .border_color(theme.border)
             .bg(theme.card_glass_bg())
+            .w_full()
             .overflow_hidden()
             .flex()
             .flex_col()
@@ -193,6 +194,7 @@ pub trait Scaffolding: ThemeExt {
             .when(!first, |el| el.border_t_1().border_color(theme.border))
             .flex()
             .flex_row()
+            .w_full()
             .items_center()
             .gap(px(ROW_GAP))
     }

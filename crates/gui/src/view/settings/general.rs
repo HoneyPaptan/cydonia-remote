@@ -50,10 +50,7 @@ const MARK: f32 = 72.;
 impl SettingsWindow {
     pub(super) fn general_body(&self, cx: &Context<Self>) -> AnyElement {
         let theme = Theme::of(cx).clone();
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(super::GROUP_GAP))
+        super::column(super::GROUP_GAP)
             .children(assets::mark().map(|path| {
                 div()
                     .flex()
@@ -115,10 +112,7 @@ impl SettingsWindow {
         let on = workspace.settings.notify_turns;
         let theme = Theme::of(cx).clone();
         Some(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(super::LABEL_GAP))
+            super::column(super::LABEL_GAP)
                 .child(theme.field_label("Notifications"))
                 .child(
                     theme.group_box().child(
@@ -164,10 +158,7 @@ impl SettingsWindow {
             "Look for a release. This copy is picked up from the site."
         };
         Some(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(super::LABEL_GAP))
+            super::column(super::LABEL_GAP)
                 .child(theme.field_label("Updates"))
                 .child(
                     theme

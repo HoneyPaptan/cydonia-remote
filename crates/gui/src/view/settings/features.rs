@@ -9,7 +9,7 @@ use crate::{
     view::settings::{SettingsWindow, Switch},
 };
 use bezel::{
-    gpui::{AnyElement, Context, div, prelude::*, px},
+    gpui::{AnyElement, Context, prelude::*},
     theme::Theme,
     ui::{icons, widgets::Scaffolding},
 };
@@ -67,10 +67,7 @@ impl SettingsWindow {
         let theme = Theme::of(cx).clone();
         // The line under the title is the section's, but it is rendered with
         // the header — see `Section::subtitle`.
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(super::GROUP_GAP))
+        super::column(super::GROUP_GAP)
             .child(
                 theme.group_box().children(
                     Feature::ALL
@@ -80,10 +77,7 @@ impl SettingsWindow {
                 ),
             )
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(super::LABEL_GAP))
+                super::column(super::LABEL_GAP)
                     .child(theme.field_label("Right panel"))
                     .child(
                         theme

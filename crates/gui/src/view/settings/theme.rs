@@ -44,10 +44,7 @@ impl SettingsWindow {
     /// a question about appearance.
     pub(super) fn appearance_body(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::of(cx).clone();
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(settings::GROUP_GAP))
+        settings::column(settings::GROUP_GAP)
             .child(theme.group_box().child(self.theme_row(cx)))
             .child(self.colors_group(cx))
             .child(self.background_group(cx))
@@ -122,10 +119,7 @@ impl SettingsWindow {
     /// What the greys are mixed from, and whether they are see-through.
     fn colors_group(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::of(cx).clone();
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(settings::LABEL_GAP))
+        settings::column(settings::LABEL_GAP)
             .child(theme.field_label("Colors"))
             .child(
                 theme
@@ -139,10 +133,7 @@ impl SettingsWindow {
 
     fn background_group(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::of(cx).clone();
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(settings::LABEL_GAP))
+        settings::column(settings::LABEL_GAP)
             .child(theme.field_label("Background"))
             .child(
                 theme
@@ -337,10 +328,7 @@ impl SettingsWindow {
 
     fn scrollbars_group(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::of(cx).clone();
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(settings::LABEL_GAP))
+        settings::column(settings::LABEL_GAP)
             .child(theme.field_label("Scrollbars"))
             .child(
                 theme
@@ -406,10 +394,7 @@ impl SettingsWindow {
     fn sidebar_group(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::of(cx).clone();
         let on = self.workspace.read(cx).indent_project_rows;
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(settings::LABEL_GAP))
+        settings::column(settings::LABEL_GAP)
             .child(theme.field_label("Sidebar"))
             .child(
                 theme.group_box().child(
@@ -447,10 +432,7 @@ impl SettingsWindow {
         }
         let on = workspace.board_view == View::List;
         Some(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(settings::LABEL_GAP))
+            settings::column(settings::LABEL_GAP)
                 .child(theme.field_label("Boards"))
                 .child(
                     theme.group_box().child(
@@ -482,10 +464,7 @@ impl SettingsWindow {
     /// How the caret behaves — the editor's and every field's alike.
     fn editor_group(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::of(cx).clone();
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(settings::LABEL_GAP))
+        settings::column(settings::LABEL_GAP)
             .child(theme.field_label("Editor"))
             .child(
                 theme

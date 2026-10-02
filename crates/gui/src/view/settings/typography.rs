@@ -181,10 +181,7 @@ impl SettingsWindow {
             workspace.article_font_size(),
             workspace.mono_font_size,
         ];
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(settings::LABEL_GAP))
+        settings::column(settings::LABEL_GAP)
             .child(theme.field_label("Typography"))
             .child(
                 theme.group_box().children(
@@ -243,10 +240,7 @@ impl SettingsWindow {
     /// a family silently falling back to the one it replaced.
     pub(super) fn families_group(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::of(cx).clone();
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(settings::LABEL_GAP))
+        settings::column(settings::LABEL_GAP)
             .child(theme.field_label("Font families"))
             .child(
                 theme.group_box().children(

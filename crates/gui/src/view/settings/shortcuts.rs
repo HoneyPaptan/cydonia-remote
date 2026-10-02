@@ -67,23 +67,14 @@ impl SettingsWindow {
     pub(super) fn shortcuts_body(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::of(cx).clone();
         let emacs = self.workspace.read(cx).settings.shortcuts.emacs;
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(settings::GROUP_GAP))
+        settings::column(settings::GROUP_GAP)
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(settings::LABEL_GAP))
+                settings::column(settings::LABEL_GAP)
                     .child(theme.field_label("System"))
                     .child(theme.group_box().child(self.activate_row(cx))),
             )
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(settings::LABEL_GAP))
+                settings::column(settings::LABEL_GAP)
                     .child(theme.field_label("Text editing"))
                     .child(theme.group_box().child(self.switch_row(
                         Switch::new(
@@ -102,10 +93,7 @@ impl SettingsWindow {
                     ))),
             )
             .children(Menu::ALL.into_iter().map(|menu| {
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(settings::LABEL_GAP))
+                settings::column(settings::LABEL_GAP)
                     .child(theme.field_label(menu.title()))
                     .child(
                         theme.group_box().children(

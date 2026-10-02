@@ -49,10 +49,7 @@ fn covers_under(mb: u64) -> String {
 impl SettingsWindow {
     pub(super) fn performance_body(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::of(cx).clone();
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(settings::GROUP_GAP))
+        settings::column(settings::GROUP_GAP)
             .child(
                 theme
                     .group_box()
@@ -300,10 +297,7 @@ impl SettingsWindow {
             sessions,
             items,
         } = self.workspace.read(cx).resident(cx);
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(settings::LABEL_GAP))
+        settings::column(settings::LABEL_GAP)
             .child(theme.field_label("Resident"))
             .child(
                 theme
