@@ -413,9 +413,6 @@ pub enum Query {
     Folders { path: String },
     MakeFolder { path: String },
     Mentions { project: String },
-    Servers { root: String },
-    Expose { port: u16 },
-    Stop { pid: u32, port: u16 },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -428,20 +425,7 @@ pub enum Answer {
     Agents { agents: Vec<AgentListing> },
     Folders(Folders),
     Mentions(Mentions),
-    Servers { servers: Vec<LocalServer> },
-    Exposed,
-    Stopped,
     Failed { message: String },
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LocalServer {
-    pub port: u16,
-    pub pid: u32,
-    pub process: String,
-    pub folder: Option<String>,
-    pub title: Option<String>,
-    pub shared: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
