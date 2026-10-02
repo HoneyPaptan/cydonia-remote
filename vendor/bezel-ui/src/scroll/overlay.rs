@@ -126,12 +126,13 @@ impl RenderOnce for Viewport {
             Axis::Vertical => scroll::Axes::Vertical,
             Axis::Horizontal => scroll::Axes::Horizontal,
         };
+        let content = self.content.when(self.fill, |el| el.w_full());
         div()
             .relative()
             .w_full()
             .min_w_0()
             .when(self.fill, |el| el.flex_1().min_h_0().flex().flex_col())
-            .child(scroll::scrolls(self.content, axes).track_scroll(&handle))
+            .child(scroll::scrolls(content, axes).track_scroll(&handle))
             .when(self.axis == Axis::Horizontal, |el| {
                 el.child(touch::sideways_when_overflowing(&handle))
             })
