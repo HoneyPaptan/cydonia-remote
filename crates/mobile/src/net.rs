@@ -1,6 +1,6 @@
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use remote::proto::{Ack, Answer, Command, Frame, SessionKey, Snapshot, Query, Upstream};
-use std::fmt;
+use std::{cell::Cell, fmt};
 use wasm_bindgen::{JsCast as _, JsValue, closure::Closure};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{CloseEvent, Headers, MessageEvent, Request, RequestInit, Response, WebSocket};
@@ -8,6 +8,11 @@ use web_sys::{CloseEvent, Headers, MessageEvent, Request, RequestInit, Response,
 const TOKEN_KEY: &str = "token=";
 const PROTOCOL: &str = "cydonia";
 const RESUMED: &str = "cydonia-resume";
+const PAUSED: &str = "cydonia-pause";
+
+thread_local! {
+    static AWAY: Cell<bool> = const { Cell::new(false) };
+}
 
 pub struct Endpoint {
     pub base: String,
@@ -293,26 +298,59 @@ fn listen(
     callback.forget();
 }
 
-fn always() -> bool {
-    true
-}
-
 fn visible() -> bool {
     web_sys::window()
         .and_then(|window| window.document())
         .is_some_and(|document| document.visibility_state() == web_sys::VisibilityState::Visible)
 }
 
+pub fn away() -> bool {
+    AWAY.get()
+}
+
+fn present() -> bool {
+    !away()
+}
+
+fn arrive() -> bool {
+    AWAY.set(false);
+    true
+}
+
+fn depart() -> bool {
+    AWAY.set(true);
+    true
+}
+
+fn shown() -> bool {
+    visible() && arrive()
+}
+
+fn hidden() -> bool {
+    !visible() && depart()
+}
+
 pub fn returns() -> UnboundedReceiver<()> {
     let (wake, returns) = mpsc::unbounded();
     if let Some(window) = web_sys::window() {
-        listen(&window, "online", wake.clone(), always);
-        listen(&window, RESUMED, wake.clone(), always);
+        listen(&window, "online", wake.clone(), present);
+        listen(&window, RESUMED, wake.clone(), arrive);
         if let Some(document) = window.document() {
-            listen(&document, "visibilitychange", wake, visible);
+            listen(&document, "visibilitychange", wake, shown);
         }
     }
     returns
+}
+
+pub fn leaves() -> UnboundedReceiver<()> {
+    let (wake, leaves) = mpsc::unbounded();
+    if let Some(window) = web_sys::window() {
+        listen(&window, PAUSED, wake.clone(), depart);
+        if let Some(document) = window.document() {
+            listen(&document, "visibilitychange", wake, hidden);
+        }
+    }
+    leaves
 }
 
 pub async fn sleep(milliseconds: i32) {

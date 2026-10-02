@@ -283,6 +283,7 @@ enum Order {
 enum Woke {
     Heard(Option<Inbound>),
     Returned,
+    Left,
     Checked,
     Refocus,
 }
@@ -409,6 +410,7 @@ impl Client {
     async fn listen(
         &self,
         returns: &mut UnboundedReceiver<()>,
+        leaves: &mut UnboundedReceiver<()>,
         wait: &mut i32,
         cx: &mut AsyncApp,
     ) -> Ending {
@@ -426,11 +428,13 @@ impl Client {
             let woke = select! {
                 message = inbound.next() => Woke::Heard(message),
                 _ = returns.next() => Woke::Returned,
+                _ = leaves.next() => Woke::Left,
                 _ = checks.next() => Woke::Checked,
                 _ = refocus.next() => Woke::Refocus,
             };
             match woke {
                 Woke::Returned => return Ending::Returned,
+                Woke::Left => return Ending::Left,
                 Woke::Checked if net::now() - heard > SILENCE_LIMIT => return Ending::Lost,
                 Woke::Checked => self.remember_if_stale(),
                 Woke::Refocus => socket.focus(&self.focus.current()),
@@ -453,11 +457,15 @@ impl Client {
 
     async fn follow(self: Rc<Self>, cx: &mut AsyncApp) {
         let mut returns = net::returns();
+        let mut leaves = net::leaves();
         let mut wait = FIRST_WAIT;
         loop {
-            let returned = match self.listen(&mut returns, &mut wait, cx).await {
+            while net::away() && returns.next().await.is_some() {}
+            drain(&mut returns);
+            drain(&mut leaves);
+            let returned = match self.listen(&mut returns, &mut leaves, &mut wait, cx).await {
                 Ending::Current => continue,
-                Ending::Returned => true,
+                Ending::Returned | Ending::Left => true,
                 Ending::Lost => {
                     crate::hosts::linked(false);
                     select! {
@@ -479,6 +487,7 @@ impl Client {
 enum Ending {
     Current,
     Returned,
+    Left,
     Lost,
 }
 
