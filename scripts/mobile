@@ -3,14 +3,20 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 out="${1:-$root/target/mobile}"
-profile="${PROFILE:-release}"
+profile="${PROFILE:-mobile}"
+
+case "$profile" in
+  mobile) optimize=(-O3 --enable-simd); export RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+simd128" ;;
+  release) optimize=(-Oz) ;;
+  *) optimize=() ;;
+esac
 
 cd "$root"
 cargo build -p cydonia-mobile --lib --target wasm32-unknown-unknown --profile "$profile"
 wasm-bindgen --target web --no-typescript --remove-name-section \
   --out-dir "$out" "target/wasm32-unknown-unknown/$profile/cydonia_mobile.wasm"
-if command -v wasm-opt >/dev/null && [ "$profile" = release ]; then
-  wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext \
+if command -v wasm-opt >/dev/null && [ ${#optimize[@]} -gt 0 ]; then
+  wasm-opt "${optimize[@]}" --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext \
     --enable-mutable-globals --enable-reference-types \
     -o "$out/cydonia_mobile_bg.wasm" "$out/cydonia_mobile_bg.wasm"
 fi

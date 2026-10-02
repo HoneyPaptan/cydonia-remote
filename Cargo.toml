@@ -57,6 +57,10 @@ lto = "fat"
 codegen-units = 1
 strip = "symbols"
 
+[profile.mobile]
+inherits = "release"
+opt-level = 3
+
 [profile.daemon]
 inherits = "release"
 opt-level = 3
