@@ -68,3 +68,4 @@ strip = "none"
 [patch.crates-io]
 bezel-ui = { path = "vendor/bezel-ui" }
 bezel-editor = { path = "vendor/bezel-editor" }
+taffy = { path = "vendor/taffy" }
