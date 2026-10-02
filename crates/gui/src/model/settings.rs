@@ -424,7 +424,6 @@ impl Default for Features {
 pub struct PanelTabs {
     pub review: bool,
     pub files: bool,
-    pub browser: bool,
 }
 
 impl Default for PanelTabs {
@@ -432,7 +431,6 @@ impl Default for PanelTabs {
         Self {
             review: true,
             files: true,
-            browser: true,
         }
     }
 }
@@ -446,7 +444,6 @@ pub enum Feature {
     Tables,
     Review,
     Files,
-    Browser,
 }
 
 impl Feature {
@@ -455,7 +452,7 @@ impl Feature {
     pub const ALL: [Self; 3] = [Self::Sessions, Self::Boards, Self::Tables];
 
     /// The right panel's tabs, listed as a group of their own.
-    pub const PANEL: [Self; 3] = [Self::Review, Self::Files, Self::Browser];
+    pub const PANEL: [Self; 2] = [Self::Review, Self::Files];
 
     /// The key it is written under, inside `[features]` or, for the panel's
     /// tabs, `[features.panel]` — see [`Feature::in_panel`].
@@ -466,7 +463,6 @@ impl Feature {
             Self::Tables => "tables",
             Self::Review => "review",
             Self::Files => "files",
-            Self::Browser => "browser",
         }
     }
 
@@ -481,7 +477,6 @@ impl Feature {
             Self::Tables => features.tables,
             Self::Review => features.panel.review,
             Self::Files => features.panel.files,
-            Self::Browser => features.panel.browser,
         }
     }
 
@@ -492,7 +487,6 @@ impl Feature {
             Self::Tables => features.tables = on,
             Self::Review => features.panel.review = on,
             Self::Files => features.panel.files = on,
-            Self::Browser => features.panel.browser = on,
         }
     }
 }

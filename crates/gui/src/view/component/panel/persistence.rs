@@ -13,11 +13,6 @@ enum SavedTab {
         path: PathBuf,
         draft: Option<(String, String)>,
     },
-    Browser {
-        id: u64,
-        url: String,
-        title: String,
-    },
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -27,6 +22,7 @@ pub(super) struct SavedPanel {
     /// back by [`Cydonia::sync_changes`], which is the only thing that opens a
     /// panel nobody pressed for.
     pub(super) open: bool,
+    #[serde(deserialize_with = "known_tabs")]
     tabs: Vec<SavedTab>,
     active: Option<usize>,
     files_open: bool,
@@ -48,6 +44,14 @@ struct SavedPanels {
     /// 0.1.11 this held one per session inside each project, which
     /// [`crate::model::migrate::v0_1_11`] clears.
     projects: BTreeMap<PathBuf, SavedPanel>,
+}
+
+fn known_tabs<'de, D: serde::Deserializer<'de>>(tabs: D) -> Result<Vec<SavedTab>, D::Error> {
+    let tabs = Vec::<serde_json::Value>::deserialize(tabs)?;
+    Ok(tabs
+        .into_iter()
+        .filter_map(|tab| serde_json::from_value(tab).ok())
+        .collect())
 }
 
 fn path() -> Option<PathBuf> {
@@ -79,14 +83,6 @@ impl Panel {
                     Content::Review(_) => SavedTab::Review,
                     Content::Terminal(terminal) => {
                         SavedTab::Terminal(terminal.read(cx).directory.clone())
-                    }
-                    Content::Browser(browser) => {
-                        let browser = browser.read(cx);
-                        SavedTab::Browser {
-                            id: browser.id,
-                            url: browser.url().to_owned(),
-                            title: browser.title.clone(),
-                        }
                     }
                     Content::File(file) => {
                         let file = file.read(cx);
@@ -120,11 +116,6 @@ impl Panel {
                         cwd.clone()
                     };
                     self.terminal(window, cx);
-                }
-                SavedTab::Browser { id, url, title } => {
-                    if self.tabs.browser {
-                        self.browser(id, url, title, cx);
-                    }
                 }
                 SavedTab::File { path, draft } => {
                     self.open_file(path, cx);
