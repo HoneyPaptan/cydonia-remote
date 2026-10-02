@@ -1434,6 +1434,7 @@ impl Cydonia {
         let theme = Theme::of(cx).clone();
         div()
             .id("sidebar-drawer")
+            .occlude()
             .absolute()
             .inset_0()
             .bg(theme.scrim())
@@ -1511,6 +1512,7 @@ impl Cydonia {
         Some(
             div()
                 .id("settings-scrim")
+                .occlude()
                 .absolute()
                 .inset_0()
                 .flex()

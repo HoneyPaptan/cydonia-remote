@@ -34,6 +34,7 @@ impl Cydonia {
         Some(
             div()
                 .id("desktop-only-scrim")
+                .occlude()
                 .absolute()
                 .inset_0()
                 .flex()

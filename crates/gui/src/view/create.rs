@@ -216,6 +216,7 @@ impl Cydonia {
         Some(
             div()
                 .id("new-board-scrim")
+                .occlude()
                 .absolute()
                 .inset_0()
                 .flex()

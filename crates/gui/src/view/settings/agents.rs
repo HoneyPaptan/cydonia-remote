@@ -326,6 +326,7 @@ impl SettingsWindow {
         Some(
             div()
                 .id("trust-scrim")
+                .occlude()
                 .absolute()
                 .inset_0()
                 .flex()

@@ -223,6 +223,7 @@ impl SettingsWindow {
         Some(
             div()
                 .id("cover-scrim")
+                .occlude()
                 .absolute()
                 .inset_0()
                 .flex()
