@@ -1,6 +1,6 @@
 use crate::net::Endpoint;
 use futures::channel::mpsc::{self, UnboundedSender};
-use gui::model::relay::{self, Opened, PageOp, Shells};
+use gui::model::relay::{self, Opened, Shells};
 use remote::proto::{Query, Screen, ShellInput};
 use std::{
     cell::RefCell,
@@ -37,45 +37,6 @@ pub fn install(endpoint: Rc<Endpoint>) {
     ENDPOINT.with(|held| *held.borrow_mut() = Some(endpoint));
     relay::install(fetch, &host);
     relay::install_shells(Rc::new(Sockets));
-    if shell_page().is_some() {
-        relay::install_pages(page);
-    }
-}
-
-fn shell_page() -> Option<(wasm_bindgen::JsValue, js_sys::Function)> {
-    let window = web_sys::window()?;
-    let shell = js_sys::Reflect::get(&window, &"CydoniaShell".into()).ok()?;
-    let page = js_sys::Reflect::get(&shell, &"page".into()).ok()?;
-    Some((shell, page.dyn_into().ok()?))
-}
-
-fn scaled(op: PageOp) -> PageOp {
-    let ratio = web_sys::window().map_or(1., |window| window.device_pixel_ratio()) as f32;
-    match op {
-        PageOp::Place {
-            id,
-            url,
-            x,
-            y,
-            width,
-            height,
-        } => PageOp::Place {
-            id,
-            url,
-            x: x * ratio,
-            y: y * ratio,
-            width: width * ratio,
-            height: height * ratio,
-        },
-        op => op,
-    }
-}
-
-fn page(op: PageOp) {
-    let (Some((shell, call)), Ok(text)) = (shell_page(), serde_json::to_string(&scaled(op))) else {
-        return;
-    };
-    let _ = call.call1(&shell, &text.into());
 }
 
 struct Sockets;

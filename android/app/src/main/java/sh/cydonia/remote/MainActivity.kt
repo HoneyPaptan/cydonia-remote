@@ -27,7 +27,6 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.window.OnBackInvokedCallback
@@ -35,7 +34,6 @@ import android.window.OnBackInvokedDispatcher
 
 class MainActivity : Activity() {
   private var web: WebView? = null
-  private var pages: Pages? = null
   private val watchdog = Handler(Looper.getMainLooper())
   private var chooser: ValueCallback<Array<Uri>>? = null
   private val backCallback by lazy { OnBackInvokedCallback { goBack() } }
@@ -129,7 +127,6 @@ class MainActivity : Activity() {
   }
 
   private fun goBack() {
-    if (pages?.back() == true) return
     val view = web ?: return finish()
     view.evaluateJavascript("window.cydoniaBack ? window.cydoniaBack() : false") { taken ->
       if (taken != "true") moveTaskToBack(true)
@@ -175,8 +172,6 @@ class MainActivity : Activity() {
 
   private fun show(view: View) {
     watchdog.removeCallbacksAndMessages(null)
-    pages?.clear()
-    pages = null
     web?.destroy()
     web = null
     setContentView(view)
@@ -259,16 +254,8 @@ class MainActivity : Activity() {
         }
       }
     }
-    val layer = FrameLayout(this)
-    val stack = FrameLayout(this).apply {
-      addView(view, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-      addView(layer, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-    }
-    show(stack)
-    val shown = Pages(this, layer)
-    view.addJavascriptInterface(shown, "CydoniaShell")
+    show(view)
     view.addJavascriptInterface(Hosts(this, connection), "CydoniaHosts")
-    pages = shown
     view.isFocusableInTouchMode = true
     view.requestFocus()
     web = view

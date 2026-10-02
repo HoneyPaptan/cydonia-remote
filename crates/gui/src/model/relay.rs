@@ -203,54 +203,6 @@ pub fn shells() -> Option<Rc<dyn Shells>> {
     SHELLS.with(|held| held.borrow().clone())
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
-#[serde(tag = "op", rename_all = "snake_case")]
-pub enum PageOp {
-    Place {
-        id: u64,
-        url: String,
-        x: f32,
-        y: f32,
-        width: f32,
-        height: f32,
-    },
-    Park {
-        id: u64,
-    },
-    Load {
-        id: u64,
-        url: String,
-    },
-    Back {
-        id: u64,
-    },
-    Forward {
-        id: u64,
-    },
-    Reload {
-        id: u64,
-    },
-    Close {
-        id: u64,
-    },
-}
-
-static PAGES: OnceLock<fn(PageOp)> = OnceLock::new();
-
-pub fn install_pages(pages: fn(PageOp)) {
-    let _ = PAGES.set(pages);
-}
-
-pub fn pages_installed() -> bool {
-    PAGES.get().is_some()
-}
-
-pub fn page(op: PageOp) {
-    if let Some(pages) = PAGES.get() {
-        pages(op);
-    }
-}
-
 #[cfg(test)]
 #[path = "../../tests/unit/relay.rs"]
 mod tests;
